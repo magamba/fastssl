@@ -57,6 +57,14 @@ from fastssl.utils.base import (
 )
 import fastssl.utils.powerlaw as powerlaw
 
+# TODO
+# add use_mlp flag
+# ensure model architecture has 3-layer projector
+# update hyperparameters
+
+# resnet18proj
+# projector_dim
+
 Section("training", "Fast CIFAR-10 training").params(
     dataset=Param(str, "dataset", default="cifar10"),
     datadir=Param(str, "train data dir", default="/data/krishna/data/cifar"),
@@ -79,6 +87,7 @@ Section("training", "Fast CIFAR-10 training").params(
     num_workers=Param(int, "num of CPU workers", default=4),
     projector_dim=Param(int, "projector dimension", default=128),
     hidden_dim=Param(int, "hidden dimension for BYOL projector", default=128),
+    use_mlp=Param(bool, "Use MLP head for projector", default=False),
     log_interval=Param(int, "log-interval in terms of epochs", default=20),
     ckpt_dir=Param(
         str, "ckpt-dir", default="/data/krishna/research/results/0319/001/checkpoints"
@@ -364,17 +373,28 @@ def build_optimizer(model, args=None):
     Returns:
         optimizer : optimizer for training model
     """
+    scheduler = None
     if args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol"):
-        return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        opt = Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+#    elif args.algorithm == "linear":
+#        default_lr = 1e-3
+#        default_weight_decay = 1e-6
+#        return Adam(
+#            model.parameters(), lr=default_lr, weight_decay=default_weight_decay
+#        )
     elif args.algorithm == "linear":
-        default_lr = 1e-3
-        default_weight_decay = 1e-6
-        return Adam(
+        default_lr = 1e-1
+        default_weight_decay = 0
+        lr_decay = 0.95
+        opt = SGD(
             model.parameters(), lr=default_lr, weight_decay=default_weight_decay
         )
+        lr_lambda = lambda epoch : lr_decay
+        scheduler = lr_scheduler.MultiplicativeLR(opt, lr_lambda=lr_lambda)
     else:
         raise Exception("Algorithm not implemented")
 
+    return opt, scheduler
 
 # def save_images(img1,img2,name):
 #     import matplotlib.pyplot as plt
@@ -394,6 +414,7 @@ def train_step(
     loss_fn=None,
     scaler=None,
     epoch=None,
+    scheduler=None,
 ):
     """
     Generic trainer.
@@ -461,6 +482,8 @@ def train_step(
                 epoch, args.epochs, total_loss / num_batches
             )
         )
+    if scheduler is not None:
+        scheduler.step()
     return total_loss / num_batches
 
 
@@ -567,7 +590,7 @@ def precache_outputs(model, loaders, args, eval_args):
     return output_dict
 
 
-def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
+def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, scheduler=None):
     if args.track_alpha:
         results = {
             "train_loss": [],
@@ -575,17 +598,20 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             "train_acc_5": [],
             "test_acc_1": [],
             "test_acc_5": [],
+            "lr" : [],
             "eigenspectrum": [],
             "alpha": [],
             "R2": [],
             "R2_100": [],
         }
     else:
-        results = {"train_loss": [], 
-                   "train_acc_1": [], "train_acc_5": [], 
-                   "test_acc_1": [], "test_acc_5": []}
+        results = {"train_loss": [],
+                   "train_acc_1": [], "train_acc_5": [],
+                   "test_acc_1": [], "test_acc_5": [],
+                   "lr" : [],
+        }
 
-    if args.algorithm == "linear":
+    if args.algorithm == "linear": ## TODO compute Jacobian here!
         if args.use_autocast:
             with autocast():
                 activations = powerlaw.generate_activations_prelayer(
@@ -609,6 +635,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
                 results["alpha"] = alpha
                 results["R2"] = R2
                 results["R2_100"] = R2_100
+                results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
                 print("Initial alpha", results["alpha"])
         else:
             alpha_arr, R2_arr, R2_100_arr = powerlaw.stringer_get_powerlaw_batch(
@@ -623,7 +650,8 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             results["alpha_arr"] = alpha_arr
             results["R2_arr"] = R2_arr
             results["R2_100_arr"] = R2_100_arr
-        
+            results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
+
         if use_wandb:
             log_wandb(results, step=0, skip_keys=['eigenspectrum'])
 
@@ -654,6 +682,9 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             results["alpha"].append((epoch - 1, alpha))
             results["R2"].append((epoch - 1, R2))
             results["R2_100"].append((epoch - 1, R2_100))
+            results["lr"].append(
+                (epoch -1, optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0])
+            )
             print("Initial alpha", results["alpha"])
 
         train_loss = train_step(
@@ -665,6 +696,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             loss_fn=loss_fn,
             epoch=epoch,
             args=args,
+            scheduler=scheduler,
         )
 
         results["train_loss"].append(train_loss)
@@ -680,6 +712,9 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             )
             results["train_acc_1"].append(acc_1)
             results["train_acc_5"].append(acc_5)
+            results["lr"].append(
+                optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0]
+            )
         elif epoch % args.log_interval == 0:
             ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch)
             state = dict(
@@ -687,6 +722,8 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
                 model=model.state_dict(),
                 optimizer=optimizer.state_dict(),
             )
+            if scheduler is not None:
+                state["scheduler"] = scheduler.state_dict()
             torch.save(state, ckpt_path)
             if args.track_alpha:
                 # compute alpha at intermediate training steps
@@ -722,10 +759,17 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
                 results["alpha"].append((epoch, alpha))
                 results["R2"].append((epoch, R2))
                 results["R2_100"].append((epoch, R2_100))
+                results["lr"].append(
+                    (epoch, optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0])
+                )
                 # print(results['alpha'])
-            
+
+        results['base_width'] = int(str(args.model).split("_")[1].replace("width", ""))
         if use_wandb:
-            log_wandb(results, step=epoch, skip_keys=['eigenspectrum'])
+            if epoch == 1:
+                log_wandb(results, step=epoch, skip_keys=['eigenspectrum'])
+            else:
+                log_wandb(results, step=epoch, skip_keys=['eigenspectrum', 'base_width'])
 
     return results
 
@@ -798,7 +842,7 @@ def run_experiment(args):
     print("CONSTRUCTED MODEL")
 
     # build optimizer
-    optimizer = build_optimizer(model, training)
+    optimizer, scheduler = build_optimizer(model, training)
     print("CONSTRUCTED OPTIMIZER")
 
     if training.precache:
@@ -823,7 +867,7 @@ def run_experiment(args):
 
         # train the model with default=BT
         results = train(model, loaders, optimizer, loss_fn, training, eval,
-                        args.logging.use_wandb)
+                        args.logging.use_wandb, scheduler=scheduler)
 
         # save results
         save_path = gen_ckpt_path(
