@@ -16,7 +16,7 @@ from ffcv.transforms.common import Squeeze
 
 
 write_dataset = True
-noise_level = 15
+noise_level = 100
 
 try:
 	dataset_folder = os.environ.get("DATA_DIR")
@@ -25,7 +25,7 @@ except KeyError:
 	print("Please run scripts/setup_env first")
 	sys.exit(1)
 
-dataset = 'cifar10'
+dataset = 'stl10'
 #if dataset=='cifar10':
 #	dataset_folder = '/network/datasets/cifar10.var/cifar10_torchvision/'
 #	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar10'
@@ -101,9 +101,17 @@ if write_dataset:
 	for name,ds in datasets.items():
 		#breakpoint()
 		if name == 'train' and noise_level>0:
-			new_targets = add_label_noise(targets=ds.targets,
+			try:
+				targets = ds.targets
+			except AttributeError:
+				targets = ds.labels
+			new_targets = add_label_noise(targets=targets,
 				 noise_percentage=noise_level/100.0)
-			ds.targets = new_targets
+			try:
+				_ = ds.targets
+				ds.targets = new_targets
+			except AttributeError:
+				ds.labels = new_targets
 
 		path = train_beton_fpath if name=='train' else test_beton_fpath
 		writer = DatasetWriter(path, {
