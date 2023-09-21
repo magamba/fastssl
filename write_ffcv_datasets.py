@@ -18,13 +18,6 @@ from ffcv.transforms.common import Squeeze
 write_dataset = True
 noise_level = 100
 
-try:
-	dataset_folder = os.environ.get("DATA_DIR")
-	ffcv_folder = dataset_folder
-except KeyError:
-	print("Please run scripts/setup_env first")
-	sys.exit(1)
-
 dataset = 'stl10'
 #if dataset=='cifar10':
 #	dataset_folder = '/network/datasets/cifar10.var/cifar10_torchvision/'
@@ -36,8 +29,31 @@ dataset = 'stl10'
 #	dataset_folder = '/network/datasets/stl10.var/stl10_torchvision/'
 #	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/stl10'
 
+try:
+	dataset_folder = os.environ.get("DATA_DIR")
+	ffcv_folder = dataset_folder
+except KeyError:
+	print("Please run scripts/setup_env first")
+	sys.exit(1)
+
 if noise_level>0:
 	ffcv_folder = os.path.join(ffcv_folder, "{}-Noise_{}".format(dataset, int(noise_level)))
+
+def with_indices(datasetclass):
+    """ Wraps a DataSet class, so that it returns (data, target, index, ground_truth).
+    """
+    def __getitem__(self, index):
+        data, target = datasetclass.__getitem__(self, index)
+        try:
+            ground_truth = self._targets_orig[index]
+        except AttributeError:
+            ground_truth = target
+        
+        return data, target, index, ground_truth
+        
+    return type(datasetclass.__name__, (datasetclass,), {
+        '__getitem__': __getitem__,
+    })
 
 def add_label_noise(targets,noise_percentage=0.1,seed=1234):
 	from numpy.random import default_rng
@@ -77,25 +93,44 @@ def add_label_noise(targets,noise_percentage=0.1,seed=1234):
 ## WRITE TO BETON FILES
 if write_dataset:
 	if dataset=='cifar10':
-		trainset = torchvision.datasets.CIFAR10(
+		CIFAR10 = torchvision.datasets.CIFAR10
+		if noise_level > 0:
+			CIFAR10 = with_indices(
+				CIFAR10
+			)
+	
+		trainset = CIFAR10(
 		    root=dataset_folder, train=True, download=False, transform=None)
 		testset = torchvision.datasets.CIFAR10(
 		    root=dataset_folder, train=False, download=False, transform=None)
 
 	if dataset=='cifar100':
-		trainset = torchvision.datasets.CIFAR100(
+		CIFAR100 = torchvision.datasets.CIFAR100
+		if noise_level > 0:
+			CIFAR100 = with_indices(
+				CIFAR100
+			)
+	
+		trainset = CIFAR100(
 		    root=dataset_folder, train=True, download=False, transform=None)
 		testset = torchvision.datasets.CIFAR100(
 		    root=dataset_folder, train=False, download=False, transform=None)
 
 	elif dataset=='stl10':
-		trainset = torchvision.datasets.STL10(
+		STL10 = torchvision.datasets.STL10
+		if noise_level > 0:
+			STL10 = with_indices(
+				STL10
+			)
+	
+		trainset = STL10(
 		    root=dataset_folder, split='train', download=False, transform=None)
 		testset = torchvision.datasets.STL10(
 		    root=dataset_folder, split='test', download=False, transform=None)
 
-	train_beton_fpath = os.path.join(ffcv_folder,'train.beton')
-	test_beton_fpath = os.path.join(ffcv_folder,'test.beton')
+	dataset_str = f"{dataset}_" if noise_level == 0 else ""
+	train_beton_fpath = os.path.join(ffcv_folder, dataset_str + "train.beton")
+	test_beton_fpath = os.path.join(ffcv_folder, dataset_str + "test.beton")
 	datasets = {'train': trainset, 'test':testset}
 
 	for name,ds in datasets.items():
@@ -112,12 +147,20 @@ if write_dataset:
 				ds.targets = new_targets
 			except AttributeError:
 				ds.labels = new_targets
+				
+			ds._targets_orig = targets
 
 		path = train_beton_fpath if name=='train' else test_beton_fpath
-		writer = DatasetWriter(path, {
+		fields = {
 			'image': RGBImageField(),
-			'label': IntField()
+			'label': IntField(),
+		}
+		if noise_level > 0:
+			fields.update({
+				'ground_truth': IntField(),
+				'sample_idx': IntField(),
 			})
+		writer = DatasetWriter(path, fields)
 		writer.from_indexed_dataset(ds)
 
 ## VERIFY the WRITTEN DATASET
@@ -134,11 +177,14 @@ for name in ['train','test']:
         Convert(torch.float32),
         ])
 
+	pipelines = {'image': image_pipeline, 'label': label_pipeline}
+	if noise_level > 0:
+		pipelines.update({'ground_truth': None, 'sample_idx': None})
 	loaders[name] = Loader(os.path.join(ffcv_folder,'{}.beton'.format(name)),
 							batch_size=BATCH_SIZE, num_workers=1,
 							order=OrderOption.SEQUENTIAL,
 							# drop_last=(name=='train'),
-							pipelines={'image': image_pipeline, 'label': label_pipeline})
+							pipelines=pipelines)
 
 transform_test = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
 
