@@ -16,9 +16,9 @@ from ffcv.transforms.common import Squeeze
 
 
 write_dataset = True
-noise_level = 100
+noise_level = 5
 
-dataset = 'stl10'
+dataset = 'cifar100'
 #if dataset=='cifar10':
 #	dataset_folder = '/network/datasets/cifar10.var/cifar10_torchvision/'
 #	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar10'
@@ -273,6 +273,25 @@ std /= nb_samples
 print("Test Dataset mean",mean)
 print("Test Dataset std",std)
 
+### ===============================================================================
+# Usage:
+#   1. set dataset manually
+#   2. Automate noisy label creation via the following bash script
+#
+# oldnoise=5; \
+# for n in 5 10 15 20 40 60 80 100; do \
+#     echo "Noise: $n"; \
+#     sed_string="s/noise_level = $oldnoise""/noise_level = $n/"; \
+#     echo "Sed string: $sed_string"; \
+#     sed -i "$sed_string" write_ffcv_datasets.py; \
+#     oldnoise=$n; \
+#     python write_ffcv_datasets.py; \
+# done; \
+# sed_string="s/noise_level = $oldnoise""/noise_level = 5/"; \
+# echo "Sed string: $sed_string"; \
+# sed -i "$sed_string" write_ffcv_datasets.py; \
+# unset oldnoise sed_string n;
+#
 ### ===============================================================================
 # STL10 stats
 # ffcv dataset stats...
