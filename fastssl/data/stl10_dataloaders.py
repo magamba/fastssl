@@ -77,7 +77,8 @@ def gen_image_label_pipeline(
     num_workers=None,
     transform_cls=None,
     rescale=False,
-    device='cuda:0'):
+    device='cuda:0',
+    label_noise=0):
     """
     Args:
         train_dataset : path to train dataset
@@ -103,6 +104,9 @@ def gen_image_label_pipeline(
         ordering = OrderOption.RANDOM if split == 'train' else OrderOption.SEQUENTIAL
         # ordering = OrderOption.RANDOM #if split == 'train' else OrderOption.SEQUENTIAL
 
+        pipelines = {'image' : image_pipeline, 'label' : label_pipeline}
+        if label_noise > 0:
+            pipelines.update({'ground_truth': label_pipeline, 'sample_idx': label_pipeline})
         loaders[split] = Loader(
             datadir[split],
             batch_size=batch_size,  
@@ -110,7 +114,7 @@ def gen_image_label_pipeline(
             os_cache=True,
             order=ordering,
             drop_last=False,
-            pipelines={'image' : image_pipeline, 'label' : label_pipeline}
+            pipelines=pipelines,
            )
     return loaders
 
@@ -202,7 +206,8 @@ def stl_classifier_ffcv(
     val_dataset=None,
     batch_size=None,
     num_workers=None,
-    device="cuda:0"):
+    device="cuda:0",
+    label_noise=0):
     
     transform_cls = STLClassifierTransform
     return gen_image_label_pipeline(
@@ -211,7 +216,8 @@ def stl_classifier_ffcv(
         batch_size=batch_size,
         num_workers=num_workers,
         transform_cls=transform_cls,
-        device=device)
+        device=device,
+        label_noise=label_noise)
 
 def stl10_pt(
     datadir,

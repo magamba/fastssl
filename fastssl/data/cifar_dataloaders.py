@@ -118,6 +118,7 @@ def gen_image_label_pipeline(
     device: str = "cuda:0",
     num_augmentations: int = 1,
     transform_cls_augs: CifarTransformFFCV = None,
+    label_noise: int = 0,
 ):
     """Generate image and label pipelines for supervised classification.
 
@@ -163,6 +164,9 @@ def gen_image_label_pipeline(
         for i, aug_pipeline in enumerate(image_pipeline_augs):
             pipelines["image{}".format(i + 1)] = aug_pipeline
             custom_field_img_mapper["image{}".format(i + 1)] = "image"
+
+        if label_noise > 0:
+            pipelines.update({'ground_truth': label_pipeline, 'sample_idx': label_pipeline})
 
         loaders[split] = Loader(
             datadir[split],
@@ -354,6 +358,7 @@ def cifar_classifier_ffcv(
     num_workers: int = None,
     device: str = "cuda:0",
     num_augmentations: int = 1,
+    label_noise: int = 0,
 ):
     """Function to return
 
@@ -380,6 +385,7 @@ def cifar_classifier_ffcv(
         device=device,
         num_augmentations=num_augmentations,
         transform_cls_augs=transform_cls_extra_augs,
+        label_noise=label_noise,
     )
 
 
