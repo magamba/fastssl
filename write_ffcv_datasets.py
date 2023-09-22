@@ -155,7 +155,7 @@ if write_dataset:
 			'image': RGBImageField(),
 			'label': IntField(),
 		}
-		if noise_level > 0:
+		if noise_level > 0 and name == "train":
 			fields.update({
 				'ground_truth': IntField(),
 				'sample_idx': IntField(),
