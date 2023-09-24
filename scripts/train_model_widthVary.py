@@ -55,15 +55,8 @@ from fastssl.utils.base import (
     stop_wandb_server,
     log_wandb
 )
+from fastssl.utils.label_correction import eval_step_clean_restored
 import fastssl.utils.powerlaw as powerlaw
-
-# TODO
-# add use_mlp flag
-# ensure model architecture has 3-layer projector
-# update hyperparameters
-
-# resnet18proj
-# projector_dim
 
 Section("training", "Fast CIFAR-10 training").params(
     dataset=Param(str, "dataset", default="cifar10"),
@@ -74,6 +67,7 @@ Section("training", "Fast CIFAR-10 training").params(
     val_dataset=Param(
         str, "valid-dataset", default="/data/krishna/data/ffcv/cifar_test.beton"
     ),
+    label_noise=Param(int, "Amount of corrupted labels from 0 to 100", default=0),
     batch_size=Param(int, "batch-size", default=512),
     epochs=Param(int, "epochs", default=100),
     lr=Param(float, "learning-rate", default=1e-3),
@@ -94,6 +88,7 @@ Section("training", "Fast CIFAR-10 training").params(
     ),
     use_autocast=Param(bool, "autocast fp16", default=True),
     track_alpha=Param(bool, "Track evolution of alpha", default=False),
+    track_jacobian=Param(bool, "Track input Jacobian of the last feature layer", default=False),
     precache=Param(bool, "Precache outputs of network", default=False),
     adaptive_ssl=Param(bool, "Use alpha to regularize SSL loss", default=False),
     num_augmentations=Param(int, "Number of augmentations to use per image", default=2),
@@ -124,6 +119,7 @@ def build_dataloaders(
     batch_size=128,
     num_workers=2,
     num_augmentations=2,
+    label_noise=0,
 ):
     if os.path.splitext(train_dataset)[-1] == ".npy":
         # using precached features!!
@@ -152,6 +148,7 @@ def build_dataloaders(
                 default_linear_bsz,
                 num_workers,
                 num_augmentations=num_augmentations,
+                label_noise=label_noise,
             )
         else:
             raise Exception("Algorithm not implemented")
@@ -166,7 +163,7 @@ def build_dataloaders(
         elif algorithm == "linear":
             default_linear_bsz = 256
             return stl_classifier_ffcv(
-                train_dataset, val_dataset, default_linear_bsz, num_workers
+                train_dataset, val_dataset, default_linear_bsz, num_workers, label_noise
             )
             # datadir,
             # splits=["train", "test"],
@@ -178,6 +175,7 @@ def build_dataloaders(
         raise Exception("Dataset {} not supported".format(dataset))
 
 
+# FIXME reproducible checkpoint path
 def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
     if suffix == "pth":
         main_dir = os.environ["SLURM_TMPDIR"]
@@ -415,6 +413,7 @@ def train_step(
     scaler=None,
     epoch=None,
     scheduler=None,
+    label_noise=0,
 ):
     """
     Generic trainer.
@@ -443,6 +442,9 @@ def train_step(
         # if num_batches==0:
         #     save_images(img1=inp[0][0].detach().cpu().numpy().transpose([1,2,0]),img2=inp[1][0].detach().cpu().numpy().transpose([1,2,0]),name='epoch_{}_img_'.format(epoch))
         # breakpoint()
+        if label_noise > 0 and args.algorithm == "linear": # remove ground_truth and sample_idx from batch
+            inp = (inp[0], inp[1]) if len(inp) == 4 else (inp[0], inp[1]) + inp[4:]
+        
         if type(inp[0]) == type(inp[1]) and inp[0].shape == inp[1].shape:
             # inp is a tuple with the two augmentations.
             # This is legacy implementation of ffcv for dual augmentations
@@ -590,8 +592,16 @@ def precache_outputs(model, loaders, args, eval_args):
     return output_dict
 
 
-def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, scheduler=None):
+def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, scheduler=None, label_noise=0):
     if args.track_alpha:
+        # TODO add
+        #         effective rank
+        #       input jacobian
+        #         test loss
+        #         accuracy on clean labels
+        #         accuracy on noisy labels
+        #         accuracy on restored labels
+        #       f eature ambient dimensionality
         results = {
             "train_loss": [],
             "train_acc_1": [],
@@ -603,13 +613,27 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             "alpha": [],
             "R2": [],
             "R2_100": [],
+            "effective_rank": [],
+            "feature_ambient_dim": [],
         }
     else:
         results = {"train_loss": [],
+                   "test_loss":  [],
                    "train_acc_1": [], "train_acc_5": [],
                    "test_acc_1": [], "test_acc_5": [],
                    "lr" : [],
         }
+    
+    if label_noise > 0 and args.algorithm == "linear":
+        results.update(
+            {"train_acc_1_clean": [],
+             "train_acc_5_clean": [],
+             "train_acc_1_corrupted": [],
+             "train_acc_5_corrupted": [],
+             "train_acc_1_restored": [],
+             "train_acc_5_restored": [],
+            }
+        )
 
     if args.algorithm == "linear": ## TODO compute Jacobian here!
         if args.use_autocast:
@@ -636,6 +660,8 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 results["R2"] = R2
                 results["R2_100"] = R2_100
                 results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
+                results["effective_rank"] = np.sum(activations_eigen) / np.max(np.abs(activations_eigen))
+                results["feature_ambient_dim"] = np.prod(activations.shape[1:])
                 print("Initial alpha", results["alpha"])
         else:
             alpha_arr, R2_arr, R2_100_arr = powerlaw.stringer_get_powerlaw_batch(
@@ -685,6 +711,9 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             results["lr"].append(
                 (epoch -1, optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0])
             )
+            results["effective_rank"].append(
+                (epoch -1, np.sum(activations_eigen) / np.max(np.abs(activations_eigen)))
+            )
             print("Initial alpha", results["alpha"])
 
         train_loss = train_step(
@@ -697,6 +726,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             epoch=epoch,
             args=args,
             scheduler=scheduler,
+            label_noise=label_noise,
         )
 
         results["train_loss"].append(train_loss)
@@ -707,9 +737,20 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             )
             results["test_acc_1"].append(acc_1)
             results["test_acc_5"].append(acc_5)
-            acc_1, acc_5 = eval_step(
-                model, loaders["train"], epoch=epoch, epochs=args.epochs
-            )
+            if label_noise > 0:
+                acc_1, acc_5, acc_1_clean, acc_5_clean, acc_1_corr, acc_5_corr, acc_1_restored, acc_5_restored = eval_step_clean_restored(
+                    model, loaders["train"], epoch=epoch, epochs=args.epochs
+                )
+                results["train_acc_1_clean"].append(acc_1_clean)
+                results["train_acc_1_corrupted"].append(acc_1_corr)
+                results["train_acc_1_restored"].append(acc_1_restored)
+                results["train_acc_5_clean"].append(acc_5_clean)
+                results["train_acc_5_corrupted"].append(acc_5_corr)
+                results["train_acc_5_restored"].append(acc_5_restored)
+            else:
+                acc_1, acc_5 = eval_step(
+                    model, loaders["train"], epoch=epoch, epochs=args.epochs
+                )
             results["train_acc_1"].append(acc_1)
             results["train_acc_5"].append(acc_5)
             results["lr"].append(
@@ -761,6 +802,9 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 results["R2_100"].append((epoch, R2_100))
                 results["lr"].append(
                     (epoch, optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0])
+                )
+                results["effective_rank"].append(
+                    (epoch, np.sum(activations_eigen) / np.max(np.abs(activations_eigen)))
                 )
                 # print(results['alpha'])
 
@@ -833,6 +877,7 @@ def run_experiment(args):
         training.batch_size,
         training.num_workers,
         training.num_augmentations,
+        training.label_noise,
     )
     print("CONSTRUCTED DATA LOADERS")
     # breakpoint()
@@ -840,6 +885,7 @@ def run_experiment(args):
     # build model from SSL library
     model = build_model(args)
     print("CONSTRUCTED MODEL")
+    print(model)
 
     # build optimizer
     optimizer, scheduler = build_optimizer(model, training)
@@ -867,7 +913,7 @@ def run_experiment(args):
 
         # train the model with default=BT
         results = train(model, loaders, optimizer, loss_fn, training, eval,
-                        args.logging.use_wandb, scheduler=scheduler)
+                        args.logging.use_wandb, scheduler=scheduler, label_noise=training.label_noise)
 
         # save results
         save_path = gen_ckpt_path(

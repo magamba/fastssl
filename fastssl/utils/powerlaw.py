@@ -63,7 +63,8 @@ def generate_activations_prelayer(net,layer,data_loader,use_cuda=False,dim_thres
     if use_cuda:
         net = net.cuda()    
     net.eval()
-    for i, (images, labels) in enumerate(tqdm(data_loader)):
+    for i, inp in enumerate(tqdm(data_loader)):
+        (images, labels) = (inp[0], inp[1]) # discarding any extra item from the batch
         if use_cuda:
             images = images.cuda()
         with torch.no_grad():
@@ -101,7 +102,8 @@ def stringer_get_powerlaw_batch(net, layer, data_loader, trange, use_cuda=False,
     if use_cuda:
         net = net.cuda()
     net.eval()
-    for i, (images, labels) in enumerate(tqdm(data_loader)):
+    for i, inp in enumerate(tqdm(data_loader)):
+        (images, labels) = (inp[0], inp[1]) # discarding any extra item from the batch
         # ignore last batch if incomplete
         # print(i,len(data_loader),len(images),data_loader.batch_size)
         if i == len(data_loader) - 1 and len(images) < data_loader.batch_size:
