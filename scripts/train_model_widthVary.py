@@ -175,7 +175,6 @@ def build_dataloaders(
         raise Exception("Dataset {} not supported".format(dataset))
 
 
-# FIXME reproducible checkpoint path
 def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
     if suffix == "pth":
         main_dir = os.environ["SLURM_TMPDIR"]
@@ -204,7 +203,7 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
         model_name = model_name.replace("proj", "")
         model_name = model_name.replace("feat", "")
         main_dir = os.path.join(main_dir, model_name)
-        if 'resnet18' in model_name:
+        if 'resnet18' in model_name or 'resnet50' in model_name:
             base_width = int(model_name.split('_width')[-1])
             # replace the _width{base_width} part in model name part of main_dir
             main_dir = main_dir.replace(f"_width{base_width}","")
@@ -292,7 +291,7 @@ def build_model(args=None):
             model_cls = bt.BarlowTwins
 
     elif training.algorithm == "linear":
-        ckpt_path = gen_ckpt_path(training, eval, epoch=args.eval.epoch)
+        ckpt_path = gen_ckpt_path(training, eval, epoch=args.eval.epoch, suffix='pt')
         if eval.use_precache:
             model_type = ""
         else:
@@ -594,14 +593,6 @@ def precache_outputs(model, loaders, args, eval_args):
 
 def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, scheduler=None, label_noise=0):
     if args.track_alpha:
-        # TODO add
-        #         effective rank
-        #       input jacobian
-        #         test loss
-        #         accuracy on clean labels
-        #         accuracy on noisy labels
-        #         accuracy on restored labels
-        #       f eature ambient dimensionality
         results = {
             "train_loss": [],
             "train_acc_1": [],
@@ -635,7 +626,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             }
         )
 
-    if args.algorithm == "linear": ## TODO compute Jacobian here!
+    if args.algorithm == "linear":
         if args.use_autocast:
             with autocast():
                 activations = powerlaw.generate_activations_prelayer(
@@ -690,6 +681,17 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
         target_model = copy.deepcopy(model)
         for param in list(target_model.parameters()):
             param.requires_grad = False
+            
+    print("Saving model checkpoint at initialization")
+    ckpt_path = gen_ckpt_path(args, eval_args, epoch=0, suffix='pt')
+    state = dict(
+        epoch=0,
+        model=model.state_dict(),
+        optimizer=optimizer.state_dict(),
+    )
+    if scheduler is not None:
+        state["scheduler"] = scheduler.state_dict()
+    torch.save(state, ckpt_path)
 
     for epoch in range(1, args.epochs + 1):
         if epoch == 1 and args.track_alpha:
@@ -757,7 +759,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0]
             )
         elif epoch % args.log_interval == 0:
-            ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch)
+            ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch, suffix='pt')
             state = dict(
                 epoch=epoch + 1,
                 model=model.state_dict(),
