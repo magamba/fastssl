@@ -442,7 +442,10 @@ def train_step(
         #     save_images(img1=inp[0][0].detach().cpu().numpy().transpose([1,2,0]),img2=inp[1][0].detach().cpu().numpy().transpose([1,2,0]),name='epoch_{}_img_'.format(epoch))
         # breakpoint()
         if label_noise > 0 and args.algorithm == "linear": # remove ground_truth and sample_idx from batch
-            inp = (inp[0], inp[1]) if len(inp) == 4 else (inp[0], inp[1]) + inp[4:]
+            if args.num_augmentations > 1:
+                inp = type(inp)(inp[0], inp[1]) + type(inp)(inp[4:])
+            else:
+                inp = (inp[0], inp[1])
         
         if type(inp[0]) == type(inp[1]) and inp[0].shape == inp[1].shape:
             # inp is a tuple with the two augmentations.
