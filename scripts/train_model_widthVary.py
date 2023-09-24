@@ -291,7 +291,7 @@ def build_model(args=None):
             model_cls = bt.BarlowTwins
 
     elif training.algorithm == "linear":
-        ckpt_path = gen_ckpt_path(training, eval, epoch=args.eval.epoch, suffix='pt')
+        ckpt_path = gen_ckpt_path(training, eval, epoch=args.eval.epoch)
         if eval.use_precache:
             model_type = ""
         else:
@@ -767,6 +767,8 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             )
             if scheduler is not None:
                 state["scheduler"] = scheduler.state_dict()
+            torch.save(state, ckpt_path)
+            ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch)
             torch.save(state, ckpt_path)
             if args.track_alpha:
                 # compute alpha at intermediate training steps
