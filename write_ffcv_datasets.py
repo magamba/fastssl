@@ -18,7 +18,7 @@ from ffcv.transforms.common import Squeeze
 write_dataset = True
 noise_level = 5
 
-dataset = 'cifar100'
+dataset = 'cifar10'
 #if dataset=='cifar10':
 #	dataset_folder = '/network/datasets/cifar10.var/cifar10_torchvision/'
 #	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar10'
@@ -49,7 +49,7 @@ def with_indices(datasetclass):
         except AttributeError:
             ground_truth = target
         
-        return data, target, index, ground_truth
+        return data, target, ground_truth, index
         
     return type(datasetclass.__name__, (datasetclass,), {
         '__getitem__': __getitem__,
@@ -179,7 +179,7 @@ for name in ['train','test']:
 
 	pipelines = {'image': image_pipeline, 'label': label_pipeline}
 	if noise_level > 0:
-		pipelines.update({'ground_truth': None, 'sample_idx': None})
+		pipelines.update({'ground_truth': label_pipeline, 'sample_idx': label_pipeline})
 	loaders[name] = Loader(os.path.join(ffcv_folder,'{}.beton'.format(name)),
 							batch_size=BATCH_SIZE, num_workers=1,
 							order=OrderOption.SEQUENTIAL,
@@ -189,17 +189,26 @@ for name in ['train','test']:
 transform_test = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
 
 if dataset=='cifar10':
-	trainset = torchvision.datasets.CIFAR10(
+	dataset_cls = torchvision.datasets.CIFAR10
+	if noise_level > 0:
+		dataset_cls = with_indices(dataset_cls)
+	trainset = dataset_cls(
 	    root=dataset_folder, train=True, download=False, transform=transform_test)
 	testset = torchvision.datasets.CIFAR10(
 	    root=dataset_folder, train=False, download=False, transform=transform_test)
 elif dataset=='cifar100':
-	trainset = torchvision.datasets.CIFAR100(
+	dataset_cls = torchvision.datasets.CIFAR100
+	if noise_level > 0:
+		dataset_cls = with_indices(dataset_cls)
+	trainset = dataset_cls(
 	    root=dataset_folder, train=True, download=False, transform=transform_test)
 	testset = torchvision.datasets.CIFAR100(
 	    root=dataset_folder, train=False, download=False, transform=transform_test)
 elif dataset=='stl10':
-	trainset = torchvision.datasets.STL10(
+	dataset_cls = torchvision.datasets.STL10
+	if noise_level > 0:
+		dataset_cls = with_indices(dataset_cls)
+	trainset = dataset_cls(
 	    root=dataset_folder, split='train', download=False, transform=transform_test)
 	testset = torchvision.datasets.STL10(
 	    root=dataset_folder, split='test', download=False, transform=transform_test)
@@ -209,8 +218,12 @@ trainloader = torch.utils.data.DataLoader(
 testloader = torch.utils.data.DataLoader(
 	testset, batch_size=BATCH_SIZE, shuffle=False, num_workers=1)
 
-X_ffcv, y_ffcv = next(iter(loaders['train']))
-X_tv, y_tv = next(iter(trainloader))
+if noise_level > 0:
+	X_ffcv, y_ffcv, gt_ffcv, sid_ffcv = next(iter(loaders['train']))
+	X_tv, y_tv, gt_tv, sid_tv = next(iter(trainloader))
+else:
+	X_ffcv, y_ffcv = next(iter(loaders['train']))
+	X_tv, y_tv = next(iter(trainloader))
 print('FFCV stats:',X_ffcv.shape,X_ffcv.mean(),X_ffcv.min(),X_ffcv.max())
 print('torchV stats:',X_tv.shape,X_tv.mean(),X_tv.min(),X_tv.max())
 print(torch.allclose(X_ffcv,X_tv*255.))
@@ -221,7 +234,8 @@ print("ffcv dataset stats...")
 mean = 0.0
 std = 0.0
 nb_samples = 0.
-for img,_ in loaders['train']:
+for inp in loaders['train']:
+	img = inp[0]
 	batch_samples = img.size(0)
 	data = img.view(batch_samples,img.size(1),-1)
 	mean+= data.mean(2).sum(0)
@@ -249,7 +263,8 @@ print("tv dataset stats...")
 mean = 0.0
 std = 0.0
 nb_samples = 0.
-for img,_ in trainloader:
+for inp in trainloader:
+	img = inp[0]
 	batch_samples = img.size(0)
 	data = img.view(batch_samples,img.size(1),-1)
 	mean+= data.mean(2).sum(0)
@@ -273,6 +288,24 @@ std /= nb_samples
 print("Test Dataset mean",mean)
 print("Test Dataset std",std)
 
+if noise_level > 0:
+	num_corrupted_ffcv = 0.
+	num_corrupted = 0.
+	num_samples = 0
+	for (_, t_ffcv, gt_ffcv, sid_ffcv), (_, t_tv, gt_tv, sid_tv) in zip(loaders["train"], trainloader):
+		assert torch.all(torch.eq(sid_ffcv, sid_tv))
+		assert torch.all(torch.eq(gt_ffcv, gt_tv))
+		assert torch.all(torch.eq(gt_tv, t_tv))
+		num_corrupted_ffcv += torch.sum(torch.ne(t_ffcv, gt_ffcv)).float().item()
+		num_corrupted += torch.sum(torch.ne(t_ffcv, t_tv)).float().item()
+		num_samples += t_ffcv.shape[0]
+	num_corrupted_ffcv = int(num_corrupted_ffcv / num_samples *100)
+	num_corrupted = int(num_corrupted / num_samples * 100)
+	print(f"FFCV - ratio of corrupted samples: {num_corrupted_ffcv}%")
+	print(f"FFCV vs TV - ratio of corrupted samples: {num_corrupted}%")
+	assert (num_corrupted == num_corrupted_ffcv)
+	assert (num_corrupted == int(noise_level))
+
 ### ===============================================================================
 # Usage:
 #   1. set dataset manually
@@ -281,13 +314,13 @@ print("Test Dataset std",std)
 # oldnoise=5; \
 # for n in 5 10 15 20 40 60 80 100; do \
 #     echo "Noise: $n"; \
-#     sed_string="s/noise_level = $oldnoise""/noise_level = $n/"; \
+#     sed_string="s/noise_level = 5$oldnoise""/noise_level = $n/"; \
 #     echo "Sed string: $sed_string"; \
 #     sed -i "$sed_string" write_ffcv_datasets.py; \
 #     oldnoise=$n; \
 #     python write_ffcv_datasets.py; \
 # done; \
-# sed_string="s/noise_level = $oldnoise""/noise_level = 5/"; \
+# sed_string="s/noise_level = 5$oldnoise""/noise_level = 10/"; \
 # echo "Sed string: $sed_string"; \
 # sed -i "$sed_string" write_ffcv_datasets.py; \
 # unset oldnoise sed_string n;
