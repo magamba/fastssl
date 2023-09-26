@@ -18,20 +18,20 @@ def get_jacobian_fn(net, layer, data_loader):
     batch = next(iter(data_loader))
     nsamples = batch[0].shape[0]
     img = batch[0].to(device)
-    ndims = np.prod(
-        net(img).shape[1:]
-    )
-    
-    def tile_input(x):
-        tile_shape = (ndims,) + (1,) * len(x.shape[1:])
-        return x.repeat(tile_shape)
         
     activations = {}
     def hook_fn(m,i,o):
         activations["features"] = i[0]
     
-    handle = layer.register_forward_hook(hook_fn)   
+    handle = layer.register_forward_hook(hook_fn)
+
+    _ = net(img)
+    ndims = np.prod(activations["features"].shape[1:])
     
+    def tile_input(x):
+        tile_shape = (ndims,) + (1,) * len(x.shape[1:])
+        return x.repeat(tile_shape)
+            
     def jacobian_fn(x):
         # discard augmentations
         inp = x[0] if isinstance(x, (list, tuple)) else x
