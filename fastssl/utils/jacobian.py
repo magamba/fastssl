@@ -40,7 +40,7 @@ def get_jacobian_fn(net, layer, data_loader):
         
         output = net(inp)
         features = activations["features"]
-        j = jacobian_features(x, features, nsamples, ndims)
+        j = jacobian_features(inp, features, nsamples, ndims)
         inp.grad = None
         
         return j
