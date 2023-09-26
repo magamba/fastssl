@@ -665,8 +665,9 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 )
                 activations_eigen = powerlaw.get_eigenspectrum(activations)
                 try:
+                    tmin, tmax = 3, min(50, activations.shape[1])
                     alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
-                        activations_eigen, trange=np.arange(3, 50)
+                        activations_eigen, trange=np.arange(tmin, tmax)
                     )
                 except:
                     alpha, R2, R2_100 = np.nan, np.nan, np.nan
@@ -731,8 +732,9 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 use_cuda=True,
             )
             activations_eigen = powerlaw.get_eigenspectrum(activations)
+            tmin, tmax = 3, min(100, activations.shape[1])
             alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
-                activations_eigen, trange=np.arange(3, 100)
+                activations_eigen, trange=np.arange(tmin, tmax)
             )
             results["eigenspectrum"].append((epoch - 1, activations_eigen))
             results["alpha"].append((epoch - 1, alpha))
@@ -807,8 +809,9 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                     use_cuda=True,
                 )
                 activations_eigen = powerlaw.get_eigenspectrum(activations)
+                tmin, tmax = 3, min(100, activations.shape[1])
                 alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
-                    activations_eigen, trange=np.arange(3, 100)
+                    activations_eigen, trange=np.arange(tmin, tmax)
                 )
                 if args.adaptive_ssl:
                     alpha_gt = max(0, alpha - 1.2)  # check if alpha > 1.2
