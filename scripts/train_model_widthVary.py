@@ -57,6 +57,7 @@ from fastssl.utils.base import (
 )
 from fastssl.utils.label_correction import eval_step_clean_restored
 import fastssl.utils.powerlaw as powerlaw
+from fastssl.utils.jacobian import get_jacobian_fn, input_jacobian
 
 Section("training", "Fast CIFAR-10 training").params(
     dataset=Param(str, "dataset", default="cifar10"),
@@ -642,7 +643,19 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                    "test_acc_1": [], "test_acc_5": [],
                    "lr" : [],
         }
-    
+        
+    if args.track_jacobian:
+        results["feature_input_jacobian"] = []
+        if label_noise > 0:
+            results["feature_input_jacobian_clean"] = []
+            results["feature_input_jacobian_corr"] = []
+            
+        jacobian_fn, handle = get_jacobian_fn(
+            net=model,
+            layer=model.fc if args.algorithm == "linear" else model.backbone.proj,
+            data_loader=loaders["train"],
+        )
+        
     if label_noise > 0 and args.algorithm == "linear":
         results.update(
             {"train_acc_1_clean": [],
@@ -675,6 +688,12 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 # save_path = gen_ckpt_path(args, args.algorithm, args.epochs, 'results_{}_full_early_alpha'.format(args.dataset), 'npy')
                 # np.save(save_path,dict(alpha=alpha,R2=R2,R2_100=R2_100))
                 # breakpoint()
+                
+                if args.track_jacobian: # track input jacobian for linear regression on pretrained features
+                    jacobian, jacobian_clean, jacobian_corr = input_jacobian(
+                        jacobian_fn=jacobian_fn, data_loader=loaders["train"], use_cuda=True, label_noise=label_noise
+                    )
+        
                 results["eigenspectrum"] = activations_eigen
                 results["alpha"] = alpha
                 results["R2"] = R2
@@ -682,7 +701,11 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
                 results["effective_rank"] = np.sum(activations_eigen) / np.max(np.abs(activations_eigen))
                 results["feature_ambient_dim"] = np.prod(activations.shape[1:])
+                results["feature_input_jacobian"] = jacobian
                 print("Initial alpha", results["alpha"])
+                if args.label_noise > 0:
+                    results["feature_input_jacobian_clean"] = jacobian_clean
+                    results["feature_input_jacobian_corr"] = jacobian_corr
         else:
             alpha_arr, R2_arr, R2_100_arr = powerlaw.stringer_get_powerlaw_batch(
                 net=model,
@@ -698,6 +721,9 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             results["R2_100_arr"] = R2_100_arr
             results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
 
+            if args.track_jacobian:
+                raise NotImplementedError("Jacobian computation without autocast support is currently not implemented.")
+        
         if use_wandb:
             log_wandb(results, step=0, skip_keys=['eigenspectrum'])
 
@@ -723,30 +749,41 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
     torch.save(state, ckpt_path)
 
     for epoch in range(1, args.epochs + 1):
-        if epoch == 1 and args.track_alpha:
-            # compute alpha before training starts!
-            activations = powerlaw.generate_activations_prelayer(
-                net=model,
-                layer=model.backbone.proj,
-                data_loader=loaders["test"],
-                use_cuda=True,
-            )
-            activations_eigen = powerlaw.get_eigenspectrum(activations)
-            tmin, tmax = 3, min(100, activations.shape[1])
-            alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
-                activations_eigen, trange=np.arange(tmin, tmax)
-            )
-            results["eigenspectrum"].append((epoch - 1, activations_eigen))
-            results["alpha"].append((epoch - 1, alpha))
-            results["R2"].append((epoch - 1, R2))
-            results["R2_100"].append((epoch - 1, R2_100))
-            results["lr"].append(
-                (epoch -1, optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0])
-            )
-            results["effective_rank"].append(
-                (epoch -1, np.sum(activations_eigen) / np.max(np.abs(activations_eigen)))
-            )
-            print("Initial alpha", results["alpha"])
+        if epoch == 1:
+            if args.track_alpha:
+                # compute alpha before training starts!
+                activations = powerlaw.generate_activations_prelayer(
+                    net=model,
+                    layer=model.backbone.proj,
+                    data_loader=loaders["test"],
+                    use_cuda=True,
+                )
+                activations_eigen = powerlaw.get_eigenspectrum(activations)
+                tmin, tmax = 3, min(100, activations.shape[1])
+                alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
+                    activations_eigen, trange=np.arange(tmin, tmax)
+                )
+                results["eigenspectrum"].append((epoch - 1, activations_eigen))
+                results["alpha"].append((epoch - 1, alpha))
+                results["R2"].append((epoch - 1, R2))
+                results["R2_100"].append((epoch - 1, R2_100))
+                results["lr"].append(
+                    (epoch -1, optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0])
+                )
+                results["effective_rank"].append(
+                    (epoch -1, np.sum(activations_eigen) / np.max(np.abs(activations_eigen)))
+                )
+                print("Initial alpha", results["alpha"])
+            
+            if args.track_jacobian:
+                # compute Jacobian before training starts!
+                jacobian, jacobian_clean, jacobian_corr = input_jacobian(
+                    jacobian_fn=jacobian_fn, data_loader=loaders["train"], use_cuda=True, label_noise=label_noise
+                )
+                results["feature_input_jacobian"].append((epoch -1, jacobian))
+                if args.label_noise > 0:
+                    results["feature_input_jacobian_clean"].append((epoch -1, jacobian_clean))
+                    results["feature_input_jacobian_corr"].append((epoch -1, jacobian_corr))
 
         train_loss = train_step(
             model=model,
@@ -842,6 +879,15 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                     (epoch, np.sum(activations_eigen) / np.max(np.abs(activations_eigen)))
                 )
                 # print(results['alpha'])
+            if args.track_jacobian:
+                # compute Jacobian before training starts!
+                jacobian, jacobian_clean, jacobian_corr = input_jacobian(
+                    jacobian_fn=jacobian_fn, data_loader=loaders["train"], use_cuda=True, label_noise=label_noise
+                )
+                results["feature_input_jacobian"].append((epoch, jacobian))
+                if args.label_noise > 0:
+                    results["feature_input_jacobian_clean"].append((epoch, jacobian_clean))
+                    results["feature_input_jacobian_corr"].append((epoch, jacobian_corr))
 
         results['base_width'] = int(str(args.model).split("_")[1].replace("width", ""))
         if use_wandb:
@@ -850,6 +896,8 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             else:
                 log_wandb(results, step=epoch, skip_keys=['eigenspectrum', 'base_width'])
 
+    if args.track_jacobian:
+        handle.remove()
     return results
 
 

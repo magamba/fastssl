@@ -1,0 +1,199 @@
+import torch
+from typing import Tuple
+import torch.nn as nn
+import numpy as np
+from tqdm import tqdm
+
+"""
+    Function signatures:
+        - jacobian, jacobian_clean, jacobian_corr = input_jacobian(
+              jacobian_fn=jacobian_fn, data_loader=loaders["train"], use_cuda=True, label_noise=label_noise
+          )
+        
+"""
+def get_jacobian_fn(net, layer, data_loader):
+    """Wrapper to initialize Jacobian computation algorithm
+    """
+    device = next(net.parameters()).device
+    batch = next(iter(data_loader))
+    nsamples = batch[0].shape[0]
+    img = batch[0].to(device)
+    ndims = np.prod(
+        net(img).shape[1:]
+    )
+    
+    def tile_input(x):
+        tile_shape = (ndims,) + (1,) * len(x.shape[1:])
+        return x.repeat(tile_shape)
+        
+    activations = {}
+    def hook_fn(m,i,o):
+        activations["features"] = i[0]
+    
+    handle = layer.register_forward_hook(hook_fn)   
+    
+    def jacobian_fn(x):
+        # discard augmentations
+        inp = x[0] if isinstance(x, (list, tuple)) else x
+        inp = tile_input(inp)
+        inp.requires_grad_(True)
+        
+        output = net(inp)
+        features = activations["features"]
+        j = jacobian_features(x, features, nsamples, ndims)
+        inp.grad = None
+        
+        return j
+    
+    return jacobian_fn, handle
+
+
+def input_jacobian(jacobian_fn, data_loader, use_cuda=False, label_noise=0):
+    """ Compute average input Jacobian norm of features using @jacobian_fn
+    
+        If label_noise is nonzero, also separately compute the average input 
+        Jacobian norm on samples with corrupted and uncorrupted labels respectively.
+    """  
+    jacobian_norm, jacobian_norm_clean, jacobian_norm_corr = 0., 0., 0.
+    num_samples, num_clean, num_corr = 0, 0, 0
+    device = torch.device("cuda:0") if use_cuda else torch.device("cpu")
+    
+    progress_bar = tqdm(data_loader, desc="Feature Input Jacobian")
+    num_batches = len(data_loader)
+    for i, inp in enumerate(progress_bar):
+        x = inp[0].to(device) # discard augmentations
+        num_samples += x.shape[0]
+        jacobian = jacobian_fn(x)
+        _, operator_norm, _ = spectral_norm(
+            jacobian,
+            num_steps=20
+        )
+        
+        jacobian_norm += operator_norm.sum().float().item()
+        
+        if label_noise > 0:
+            clean_idx = torch.eq(target, ground_truth)
+            corr_idx = torch.ne(target, ground_truth)
+            num_clean += clean_idx.sum().float().item()
+            num_corr += corr_idx.sum().float().item()
+            
+            jacobian_norm_clean += operator_norm[clean_idx].sum().float().item()
+            jacobian_norm_corr += operator_norm[corr_idx].sum().float().item()
+
+        avg_norm = jacobian_norm / num_samples
+        if num_corr > 0:
+            avg_norm_corr = jacobian_norm_corr / num_corr
+        else:
+            avg_norm_corr = 0.
+        if num_clean > 0:
+            avg_norm_clean = jacobian_norm_clean / num_clean
+        else:
+            avg_norm_clean = 0.
+            
+        progress_bar.set_description(
+            "Batch: [{}/{}] avg Jacobian norm: {:.2f} avg Jacobian norm clean: {:.2f} avg Jacobian norm corr: {:.2f}".format(
+                i, num_batches, avg_norm, avg_norm_clean, avg_norm_corr
+            )
+        )
+    
+    return avg_norm, avg_norm_clean, avg_norm_corr
+
+
+@torch.jit.script
+def batched_matrix_vector_prod(u: torch.Tensor, J: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+    """ Compute product u @ J.t() @ v
+    """
+    return torch.bmm(
+        torch.transpose(
+            torch.bmm(J, v), 
+            1,
+            2
+        ), u
+    ).squeeze(-1).squeeze(-1) # workaround to avoid squeezing batch dimension
+
+
+@torch.jit.script
+def spectral_norm_power_iteration(J: torch.Tensor, v: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    """ Compute one iteration of the power method to estimate
+        the largest singular value of J
+    """
+    u = torch.bmm(J, v)
+    u /= torch.norm(u, p=2, dim=1).unsqueeze(-1)
+    v = torch.matmul(torch.transpose(J, 1, 2), u)
+    v /= torch.norm(v, p=2, dim=1).unsqueeze(-1)
+    return (u, v)
+
+
+@torch.jit.script
+def spectral_norm(J: torch.Tensor, num_steps: int, atol: float = 1e-2) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """ Compute the spectral norm of @J using @num_steps iterations
+        of the power method.
+        
+        @return u (torch.Tensor): left-singular vector
+        @return sigma (torch.Tensor): largest singular value
+        @return v (torch.Tensor): right-singular vector
+    """
+    device = J.device
+    dtype = J.dtype
+    J = J.view(J.shape[0], -1, J.shape[2])
+    nbatches, nindims, noutdims = J.shape[0], J.shape[1], J.shape[2]
+    
+    batch_indices = torch.arange(nbatches, dtype=torch.long, device=device)
+    atol = torch.full((1,), fill_value=atol, device=device, dtype=dtype)
+    
+    v = torch.randn(nbatches, noutdims, 1, device=device, dtype=dtype)
+    v /= torch.norm(v, p=2, dim=1).unsqueeze(-1)
+    sigma_prev = torch.zeros(nbatches, dtype=dtype, device=device)
+    u_prev = torch.zeros((nbatches, nindims), dtype=dtype, device=device)
+    v_prev = torch.zeros((nbatches, noutdims), dtype=dtype, device=device)
+    
+    for i in range(num_steps):
+        u, v = spectral_norm_power_iteration(J, v)
+        sigma = batched_matrix_vector_prod(u, J, v)
+        diff_indices = torch.ge(
+            torch.abs(sigma.squeeze() - sigma_prev[batch_indices]), atol
+        )
+
+        if not torch.any(diff_indices):
+            break
+        
+        sigma_prev[batch_indices[diff_indices]] = sigma[diff_indices]
+        u_prev[batch_indices[diff_indices]] = u[diff_indices].squeeze(-1)
+        v_prev[batch_indices[diff_indices]] = v[diff_indices].squeeze(-1)
+        u = u[diff_indices]
+        v = v[diff_indices]
+        J = J[diff_indices]
+        batch_indices = batch_indices[diff_indices]
+        
+    return u_prev.squeeze(), sigma_prev, v_prev.squeeze()
+
+
+@torch.jit.script
+def jacobian_features(x: torch.Tensor, features: torch.Tensor, nsamples: int, ndims: int) -> torch.Tensor:
+    """ Compute the Jacobian of @logits w.r.t. @input.
+        
+        Note: @x_in should track gradient computation before @features
+              is computed, otherwise this method will fail. @x should
+              store a gradient_fn corresponding to the function used to
+              produce @logits.
+        
+        Params:
+            @x : 4D Tensor Batch of inputs with .grad attribute populated 
+                 according to @logits
+            @logits: 2D Tensor Batch of network features at @x
+            
+        Return:
+            Jacobian: Batch-indexed 2D torch.Tensor of shape (N,*, K).
+            where N is the batch dimension, D is the (flattened) input
+            space dimension, and K is the number of feature dimensions
+            of the network.
+    """
+    x.retain_grad()
+    indexing_mask = torch.eye(ndims, device=x.device).repeat((nsamples,1))
+    
+    features.backward(gradient=indexing_mask, retain_graph=True)
+    jacobian = x.grad.data.view(nsamples, ndims, -1).transpose(1,2)
+    
+    return jacobian
+
+
