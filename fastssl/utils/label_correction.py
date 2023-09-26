@@ -61,8 +61,14 @@ def eval_step_clean_restored(model, dataloader, epoch=None, epochs=None, split="
 
         acc_1 = total_1 / total_samples * 100
         acc_5 = total_5 / total_samples * 100
-        acc_clean_1 = total_clean_1 / total_clean * 100
-        acc_clean_5 = total_clean_5 / total_clean * 100
+        
+        if total_clean > 0:
+            acc_clean_1 = total_clean_1 / total_clean * 100
+            acc_clean_5 = total_clean_5 / total_clean * 100
+        else:
+            acc_clean_1 = 0.
+            acc_clean_5 = 0.
+        
         if total_corr > 0:
             acc_corr_1 = total_corr_1 / total_corr * 100
             acc_corr_5 = total_corr_5 / total_corr * 100
