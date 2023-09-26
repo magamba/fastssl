@@ -14,7 +14,6 @@ from ffcv.transforms import RandomHorizontalFlip, Cutout, \
     RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage
 from ffcv.transforms.common import Squeeze
 
-
 write_dataset = True
 noise_level = 5
 
@@ -140,6 +139,7 @@ if write_dataset:
 				targets = ds.targets
 			except AttributeError:
 				targets = ds.labels
+			targets_orig = targets.copy()
 			new_targets = add_label_noise(targets=targets,
 				 noise_percentage=noise_level/100.0)
 			try:
@@ -148,7 +148,7 @@ if write_dataset:
 			except AttributeError:
 				ds.labels = new_targets
 				
-			ds._targets_orig = targets
+			ds._targets_orig = targets_orig
 
 		path = train_beton_fpath if name=='train' else test_beton_fpath
 		fields = {
