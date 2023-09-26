@@ -160,16 +160,13 @@ def gen_image_label_pipeline(
         # ordering = OrderOption.RANDOM #if split == 'train' else OrderOption.SEQUENTIAL
 
         pipelines = {"image": image_pipeline, "label": label_pipeline}
-        if label_noise > 0:
+        if label_noise > 0 and split == "train":
             pipelines.update({'ground_truth': label_pipeline, 'sample_idx': label_pipeline})
         
         custom_field_img_mapper = {}
         for i, aug_pipeline in enumerate(image_pipeline_augs):
             pipelines["image{}".format(i + 1)] = aug_pipeline
             custom_field_img_mapper["image{}".format(i + 1)] = "image"
-
-        if label_noise > 0:
-            custom_field_mapper.update({'ground_truth': "label", 'sample_idx': "label"})
 
         loaders[split] = Loader(
             datadir[split],

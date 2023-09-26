@@ -4,6 +4,7 @@ from torch.cuda.amp import autocast
 
 def eval_step_clean_restored(model, dataloader, epoch=None, epochs=None, split=""):
     model.eval()
+    total_1, total_5 = 0, 0
     total_clean_1, total_corr_1, total_restored_1 = 0., 0., 0.
     total_clean_5, total_corr_5, total_restored_5 = 0., 0., 0.
     total_samples, total_clean, total_corr = 0, 0, 0
@@ -22,10 +23,10 @@ def eval_step_clean_restored(model, dataloader, epoch=None, epochs=None, split="
         total_samples += inp[0].shape[0]
         
         clean_idx = torch.eq(target, ground_truth)
-        corr_idx = ~clean_idx
-        
-        total_clean += clean_idx.sum().item()
-        total_corr = corr_idx.sum().item()
+        corr_idx = torch.ne(target, ground_truth)
+
+        total_clean += clean_idx.sum().float().item()
+        total_corr += corr_idx.sum().float().item()
         
         # total_samples += data.shape[0]
         # data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
@@ -62,13 +63,20 @@ def eval_step_clean_restored(model, dataloader, epoch=None, epochs=None, split="
         acc_5 = total_5 / total_samples * 100
         acc_clean_1 = total_clean_1 / total_clean * 100
         acc_clean_5 = total_clean_5 / total_clean * 100
-        acc_corr_1 = total_corr_1 / total_corr * 100
-        acc_corr_5 = total_corr_5 / total_corr * 100
-        acc_restored_1 = total_restored_1 / total_corr * 100
-        acc_restored_5 = total_restored_5 / total_corr * 100
+        if total_corr > 0:
+            acc_corr_1 = total_corr_1 / total_corr * 100
+            acc_corr_5 = total_corr_5 / total_corr * 100
+            acc_restored_1 = total_restored_1 / total_corr * 100
+            acc_restored_5 = total_restored_5 / total_corr * 100
+        else:
+            acc_corr_1 = 0.
+            acc_corr_5 = 0.
+            acc_restored_1 = 0.
+            acc_restored_5 = 0.
+
         test_bar.set_description(
-            "{} Epoch: [{}/{}] ACC@1: {:.2f}% ACC@5: {:.2f}% clean ACC@1: {:.2f}% clean ACC@5: {:.2f}%  corr ACC@1: {:.2f}% corr ACC@5: {:.2f}% restored ACC@1: {:.2f}% restored ACC@5: {:.2f}%".format(
-                split, epoch, epochs, acc_1, acc_5, acc_clean_1, acc_clean_5, acc_corr_1, acc_corr_5, acc_restored_1, acc_restored_5
+            "{} Epoch: [{}/{}] ACC@1: {:.2f}% clean ACC@1: {:.2f}% corr ACC@1: {:.2f}% restored ACC@1: {:.2f}%".format(
+                split, epoch, epochs, acc_1, acc_clean_1, acc_corr_1, acc_restored_1
             )
         )
-    return acc_clean_1, acc_clean_5, acc_corr_1, acc_corr_5, acc_restored_1, acc_restored_5
+    return acc_1, acc_5, acc_clean_1, acc_clean_5, acc_corr_1, acc_corr_5, acc_restored_1, acc_restored_5

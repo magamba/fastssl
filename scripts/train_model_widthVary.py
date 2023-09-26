@@ -125,7 +125,7 @@ def build_dataloaders(
         # using precached features!!
         print("Using simple dataloader")
         return simple_dataloader(
-            train_dataset, val_dataset, batch_size=batch_size, num_workers=num_workers
+            train_dataset, val_dataset, batch_size=batch_size, num_workers=num_workers, label_noise=label_noise
         )
     if "cifar" in dataset:
         if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol"):
@@ -540,12 +540,21 @@ def precache_outputs(model, loaders, args, eval_args):
     model.eval()
     trainset_outputs = []
     trainset_labels = []
+    trainset_ground_truths = []
+    trainset_sample_ids = []
     train_bar = tqdm(loaders["train"], desc="Train set")
+    noise_ratio = 0.
+    num_samples = 0
     for inp in train_bar:
         # for data, target in train_bar:
         inp = list(inp)
         # WARNING: every epoch could have different augmentations of images
         target = inp.pop(1)
+        if args.label_noise > 0:
+            ground_truth = inp.pop(1) # ground_truth
+            sample_idx = inp.pop(1) # sample_id
+            noise_ratio += torch.ne(target, ground_truth).sum().float().item()
+            num_samples += target.shape[0]
         for x in inp:
             x = x.cuda(non_blocking=True)
         # data = data.cuda(non_blocking=True)
@@ -557,8 +566,16 @@ def precache_outputs(model, loaders, args, eval_args):
                 # out = model(data)
         trainset_outputs.append(out.data.cpu().float())
         trainset_labels.append(target.data.cpu())
+        if args.label_noise > 0:
+            trainset_ground_truths.append(ground_truth.data.cpu())
+            trainset_sample_ids.append(sample_idx.data.cpu())
     trainset_outputs = torch.cat(trainset_outputs)
     trainset_labels = torch.cat(trainset_labels)
+    if args.label_noise > 0:
+        trainset_ground_truths = torch.cat(trainset_ground_truths)
+        trainset_sample_ids = torch.cat(trainset_sample_ids)
+        total_corr = noise_ratio / num_samples * 100
+        print(f"Ratio of corrupted labels: {total_corr}%")
 
     testset_outputs = []
     testset_labels = []
@@ -591,6 +608,14 @@ def precache_outputs(model, loaders, args, eval_args):
             "labels": testset_labels.cpu().numpy(),
         },
     }
+
+    if args.label_noise > 0:
+        output_dict["train"].update(
+            {"ground_truths": trainset_ground_truths.cpu().numpy(),
+             "sample_ids": trainset_sample_ids.cpu().numpy(),
+            }
+        )
+
     return output_dict
 
 
@@ -744,7 +769,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             results["test_acc_5"].append(acc_5)
             if label_noise > 0:
                 acc_1, acc_5, acc_1_clean, acc_5_clean, acc_1_corr, acc_5_corr, acc_1_restored, acc_5_restored = eval_step_clean_restored(
-                    model, loaders["train"], epoch=epoch, epochs=args.epochs
+                    model, loaders["train"], epoch=epoch, epochs=args.epochs, split="train"
                 )
                 results["train_acc_1_clean"].append(acc_1_clean)
                 results["train_acc_1_corrupted"].append(acc_1_corr)
@@ -978,5 +1003,5 @@ if __name__ == "__main__":
     print(f"Total time: {time.time() - start_time}")
     print(f"Results saved to {save_fname}")
 
-    if args.logging.use_wandb: 
+    if args.logging.use_wandb:
         stop_wandb_server()
