@@ -33,8 +33,8 @@ def get_split_batch_gen(data_loader, batch_size, desc="", label_noise=0):
                 imgs, targets = batch[:2]
                 for img, target in zip(
                     torch.split(imgs, batch_size), 
-                    torch.split(targets, batch_size), 
-                
+                    torch.split(targets, batch_size)):
+                    
                     yield img, target
             
     return split_batch_gen, progress_bar
