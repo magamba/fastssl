@@ -24,7 +24,7 @@ def get_split_batch_gen(data_loader, batch_size, desc="", label_noise=0):
                 for img, target, ground_truth, sample_id in zip(
                     torch.split(imgs, batch_size), 
                     torch.split(targets, batch_size), 
-                    torch.split(ground_truths, batch_size)
+                    torch.split(ground_truths, batch_size),
                     torch_split(sample_ids, batch_size)):
                 
                     yield img, target, ground_truth, sample_id
