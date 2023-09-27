@@ -96,7 +96,7 @@ def input_jacobian(jacobian_fn, data_loader, batch_size=128, use_cuda=False, lab
             data_loader, batch_size, label_noise
         ),
         desc="Feature Input Jacobian", 
-        total = num_batches,
+        total = num_batches +1,
     )
     
     for i, batch in enumerate(progress_bar):
@@ -136,7 +136,7 @@ def input_jacobian(jacobian_fn, data_loader, batch_size=128, use_cuda=False, lab
             
         progress_bar.set_description(
             "Batch: [{}/{}] avg Jacobian norm: {:.2f} avg Jacobian norm clean: {:.2f} avg Jacobian norm corr: {:.2f}".format(
-                i, num_batches -1, avg_norm, avg_norm_clean, avg_norm_corr
+                i, num_batches, avg_norm, avg_norm_clean, avg_norm_corr
             )
         )
     
