@@ -4,7 +4,7 @@ import torch.nn as nn
 import numpy as np
 from tqdm import tqdm
 
-def get_split_batch_gen(data_loader, batch_size, desc=""):
+def get_split_batch_gen(data_loader, batch_size, desc="", label_noise=0):
     """ Creates a generator that splits batches from data_loader into smaller batches
         of @batch_size and yields them. Also returns a tqdm progress bar.
         
@@ -13,10 +13,30 @@ def get_split_batch_gen(data_loader, batch_size, desc=""):
     """
     dl_batch_size = data_loader.batch_size
     assert dl_batch_size % batch_size == 0, f"Error: batch size ({batch_size}) must divide data loader's batch size ({dl_batch_size}) for Jacobian computation."
-    progress_bar = tqdm(data_loader, desc=desc)
+    total_length = len(data_loader) * dl_batch_size // batch_size
+    progress_bar = tqdm(data_loader, desc=desc, total=total_length)
     
     # generator discards labels and augmentations
-    split_batch_gen = (inp for batch in data_loader for inp in torch.split(batch[0], batch_size))
+    def split_batch_gen():
+        for batch in data_loader:
+            if label_noise > 0:
+                imgs, targets, ground_truths, sample_ids = batch[:4]
+                for img, target, ground_truth, sample_id in zip(
+                    torch.split(imgs, batch_size), 
+                    torch.split(targets, batch_size), 
+                    torch.split(ground_truths, batch_size)
+                    torch_split(sample_ids, batch_size)):
+                
+                    yield img, target, ground_truth, sample_id
+                
+            else:
+                imgs, targets = batch[:2]
+                for img, target in zip(
+                    torch.split(imgs, batch_size), 
+                    torch.split(targets, batch_size), 
+                
+                    yield img, target
+            
     return split_batch_gen, progress_bar
 
 
@@ -72,11 +92,14 @@ def input_jacobian(jacobian_fn, data_loader, batch_size=128, use_cuda=False, lab
     num_samples, num_clean, num_corr = 0, 0, 0
     device = torch.device("cuda:0") if use_cuda else torch.device("cpu")
     
-    num_batches = len(data_loader) * len(data_loader) // batch_size
-    split_batch_gen, progress_bar = get_split_batch_gen(data_loader, batch_size, desc="Feature Input Jacobian")
+    num_batches = len(data_loader) * data_loader.batch_size // batch_size
+    split_batch_gen, progress_bar = get_split_batch_gen(
+        data_loader, batch_size, desc="Feature Input Jacobian", label_noise=label_noise
+    )
     
-    for i, x in enumerate(split_batch_gen):
-        x = x.to(device) # discard augmentations
+    for i, batch in enumerate(split_batch_gen):
+        
+        x = batch[0].to(device) # read input img from batch
         num_samples += x.shape[0]
         
         jacobian = jacobian_fn(x)
@@ -88,6 +111,9 @@ def input_jacobian(jacobian_fn, data_loader, batch_size=128, use_cuda=False, lab
         jacobian_norm += operator_norm.sum().float().item()
         
         if label_noise > 0:
+            target = batch[1].to(device, non_blocking=True)
+            ground_truth = batch[2].to(device, non_blocking=True)
+            
             clean_idx = torch.eq(target, ground_truth)
             corr_idx = torch.ne(target, ground_truth)
             num_clean += clean_idx.sum().float().item()

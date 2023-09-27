@@ -694,7 +694,11 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                     jacobian, jacobian_clean, jacobian_corr = input_jacobian(
                         jacobian_fn=jacobian_fn, data_loader=loaders["train"], batch_size=args.jacobian_batch_size, use_cuda=True, label_noise=label_noise
                     )
-        
+                    results["feature_input_jacobian"] = jacobian
+                    if args.label_noise > 0:
+                        results["feature_input_jacobian_clean"] = jacobian_clean
+                        results["feature_input_jacobian_corr"] = jacobian_corr
+                
                 results["eigenspectrum"] = activations_eigen
                 results["alpha"] = alpha
                 results["R2"] = R2
@@ -702,11 +706,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
                 results["effective_rank"] = np.sum(activations_eigen) / np.max(np.abs(activations_eigen))
                 results["feature_ambient_dim"] = np.prod(activations.shape[1:])
-                results["feature_input_jacobian"] = jacobian
                 print("Initial alpha", results["alpha"])
-                if args.label_noise > 0:
-                    results["feature_input_jacobian_clean"] = jacobian_clean
-                    results["feature_input_jacobian_corr"] = jacobian_corr
         else:
             alpha_arr, R2_arr, R2_100_arr = powerlaw.stringer_get_powerlaw_batch(
                 net=model,
