@@ -97,7 +97,7 @@ def input_jacobian(jacobian_fn, data_loader, batch_size=128, use_cuda=False, lab
         data_loader, batch_size, desc="Feature Input Jacobian", label_noise=label_noise
     )
     
-    for i, batch in enumerate(split_batch_gen):
+    for i, batch in enumerate(split_batch_gen()):
         
         x = batch[0].to(device) # read input img from batch
         num_samples += x.shape[0]
