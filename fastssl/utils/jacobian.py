@@ -18,7 +18,7 @@ def get_split_batch_gen(data_loader, batch_size, desc="", label_noise=0):
     
     # generator discards labels and augmentations
     def split_batch_gen():
-        for batch in data_loader:
+        for batch in progress_bar:
             if label_noise > 0:
                 imgs, targets, ground_truths, sample_ids = batch[:4]
                 for img, target, ground_truth, sample_id in zip(
