@@ -4,28 +4,36 @@ import torch.nn as nn
 import numpy as np
 from tqdm import tqdm
 
-"""
-    Function signatures:
-        - jacobian, jacobian_clean, jacobian_corr = input_jacobian(
-              jacobian_fn=jacobian_fn, data_loader=loaders["train"], use_cuda=True, label_noise=label_noise
-          )
-        
-"""
+def split_batch(data_loader, batch_size):
+    """ Splits batches from data_loader into smaller batches and yields
+        them. 
+    """
+    try:
+        dl_batch_size = data_loader.batch_size
+    except AttributeError:
+        dl_batch_size = data_loader.iterable.batch_size
+    assert dl_batch_size % batch_size == 0, f"Error: batch size ({batch_size}) must divide data loader's batch size ({dl_batch_size}) for Jacobian computation."
+    for batch in data_loader:
+        batch = batch[0] # discard labels and augmentations
+        for inp in torch.split(batch, batch_size):
+            yield inp
+
+
 def get_jacobian_fn(net, layer, data_loader):
     """Wrapper to initialize Jacobian computation algorithm
-    """
-    device = next(net.parameters()).device
-    batch = next(iter(data_loader))
-    nsamples = batch[0].shape[0]
-    img = batch[0].to(device)
-        
+    """     
     activations = {}
     def hook_fn(m,i,o):
         activations["features"] = i[0]
     
     handle = layer.register_forward_hook(hook_fn)
 
-    _ = net(img)
+    device = next(net.parameters()).device
+    batch = next(iter(data_loader))
+    if isinstance(batch, (tuple, list)):
+        batch = batch[0]
+    batch = batch.to(device)
+    _ = net(batch)
     ndims = np.prod(activations["features"].shape[1:])
     
     def tile_input(x):
@@ -37,8 +45,9 @@ def get_jacobian_fn(net, layer, data_loader):
         inp = x[0] if isinstance(x, (list, tuple)) else x
         inp = tile_input(inp)
         inp.requires_grad_(True)
+        nsamples = inp.shape[0]
         
-        output = net(inp)
+        _ = net(inp)
         features = activations["features"]
         j = jacobian_features(inp, features, nsamples, ndims)
         inp.grad = None
@@ -48,21 +57,27 @@ def get_jacobian_fn(net, layer, data_loader):
     return jacobian_fn, handle
 
 
-def input_jacobian(jacobian_fn, data_loader, use_cuda=False, label_noise=0):
+def input_jacobian(jacobian_fn, data_loader, batch_size=128, use_cuda=False, label_noise=0):
     """ Compute average input Jacobian norm of features using @jacobian_fn
     
         If label_noise is nonzero, also separately compute the average input 
         Jacobian norm on samples with corrupted and uncorrupted labels respectively.
+        
+        Note: Jacobian computation can be memory expensive, so this function needs its own batch
+              size when iterating over @data_loader, in order for (potentially) large batches
+              to be broken down into smaller chunks.
     """  
     jacobian_norm, jacobian_norm_clean, jacobian_norm_corr = 0., 0., 0.
     num_samples, num_clean, num_corr = 0, 0, 0
     device = torch.device("cuda:0") if use_cuda else torch.device("cpu")
     
     progress_bar = tqdm(data_loader, desc="Feature Input Jacobian")
-    num_batches = len(data_loader)
-    for i, inp in enumerate(progress_bar):
-        x = inp[0].to(device) # discard augmentations
+    num_batches = len(data_loader) * len(data_loader) // batch_size
+    
+    for i, x in enumerate(split_batch(progress_bar, batch_size)):
+        x = x.to(device) # discard augmentations
         num_samples += x.shape[0]
+        
         jacobian = jacobian_fn(x)
         _, operator_norm, _ = spectral_norm(
             jacobian,

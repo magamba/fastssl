@@ -90,6 +90,7 @@ Section("training", "Fast CIFAR-10 training").params(
     use_autocast=Param(bool, "autocast fp16", default=True),
     track_alpha=Param(bool, "Track evolution of alpha", default=False),
     track_jacobian=Param(bool, "Track input Jacobian of the last feature layer", default=False),
+    jacobian_batch_size=Param(int, "Batch size to use for Jacobian computation (must divide training.batch_size).", default=128),
     precache=Param(bool, "Precache outputs of network", default=False),
     adaptive_ssl=Param(bool, "Use alpha to regularize SSL loss", default=False),
     num_augmentations=Param(int, "Number of augmentations to use per image", default=2),
@@ -691,7 +692,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 
                 if args.track_jacobian: # track input jacobian for linear regression on pretrained features
                     jacobian, jacobian_clean, jacobian_corr = input_jacobian(
-                        jacobian_fn=jacobian_fn, data_loader=loaders["train"], use_cuda=True, label_noise=label_noise
+                        jacobian_fn=jacobian_fn, data_loader=loaders["train"], batch_size=args.jacobian_batch_size, use_cuda=True, label_noise=label_noise
                     )
         
                 results["eigenspectrum"] = activations_eigen
@@ -778,7 +779,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             if args.track_jacobian:
                 # compute Jacobian before training starts!
                 jacobian, jacobian_clean, jacobian_corr = input_jacobian(
-                    jacobian_fn=jacobian_fn, data_loader=loaders["train"], use_cuda=True, label_noise=label_noise
+                    jacobian_fn=jacobian_fn, data_loader=loaders["train"], batch_size=args.jacobian_batch_size, use_cuda=True, label_noise=label_noise
                 )
                 results["feature_input_jacobian"].append((epoch -1, jacobian))
                 if args.label_noise > 0:
@@ -882,7 +883,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             if args.track_jacobian:
                 # compute Jacobian before training starts!
                 jacobian, jacobian_clean, jacobian_corr = input_jacobian(
-                    jacobian_fn=jacobian_fn, data_loader=loaders["train"], use_cuda=True, label_noise=label_noise
+                    jacobian_fn=jacobian_fn, data_loader=loaders["train"], batch_size=args.jacobian_batch_size, use_cuda=True, label_noise=label_noise
                 )
                 results["feature_input_jacobian"].append((epoch, jacobian))
                 if args.label_noise > 0:
