@@ -18,7 +18,7 @@ def split_batch_gen(data_loader, batch_size, label_noise=0):
     # generator discards labels and augmentations
     for batch_id, batch in enumerate(data_loader):
         if batch_id == last_batch and not data_loader.drop_last:
-            batch_size = 1 # avoid splitting the last batch, which might not be divisible by batch_size
+            batch_size = batch[0].shape[0] # avoid splitting the last batch, which might not be divisible by batch_size
         if label_noise > 0:
             imgs, targets, ground_truths, sample_ids = batch[:4]
             for img, target, ground_truth, sample_id in zip(

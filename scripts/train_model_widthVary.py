@@ -717,10 +717,10 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             jacobian, jacobian_clean, jacobian_corr = input_jacobian(
                 jacobian_fn=jacobian_fn, data_loader=loaders["train"], batch_size=args.jacobian_batch_size, use_cuda=True, label_noise=label_noise
             )
-            results["feature_input_jacobian"] = jacobian
+            results["feature_input_jacobian"] = [jacobian]
             if args.label_noise > 0:
-                results["feature_input_jacobian_clean"] = jacobian_clean
-                results["feature_input_jacobian_corr"] = jacobian_corr
+                results["feature_input_jacobian_clean"] = [jacobian_clean]
+                results["feature_input_jacobian_corr"] = [jacobian_corr]
         
         if use_wandb:
             log_wandb(results, step=0, skip_keys=['eigenspectrum'])
