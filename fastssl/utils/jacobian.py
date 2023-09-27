@@ -90,7 +90,7 @@ def input_jacobian(jacobian_fn, data_loader, batch_size=128, use_cuda=False, lab
     num_samples, num_clean, num_corr = 0, 0, 0
     device = torch.device("cuda:0") if use_cuda else torch.device("cpu")
     
-    num_batches = len(data_loader) * data_loader.batch_size // batch_size
+    num_batches = (len(data_loader) -1) * data_loader.batch_size // batch_size
     progress_bar = tqdm(
         split_batch_gen(
             data_loader, batch_size, label_noise
