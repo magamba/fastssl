@@ -824,6 +824,16 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             results["lr"].append(
                 optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0]
             )
+            if args.track_jacobian and epoch % args.log_interval == 0:
+                # compute Jacobian before training starts!
+                jacobian, jacobian_clean, jacobian_corr = input_jacobian(
+                    jacobian_fn=jacobian_fn, data_loader=loaders["train"], batch_size=args.jacobian_batch_size, use_cuda=True, label_noise=label_noise
+                )
+                results["feature_input_jacobian"].append((epoch, jacobian))
+                if args.label_noise > 0:
+                    results["feature_input_jacobian_clean"].append((epoch, jacobian_clean))
+                    results["feature_input_jacobian_corr"].append((epoch, jacobian_corr))
+            
         elif epoch % args.log_interval == 0:
             ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch, suffix='pt')
             state = dict(
