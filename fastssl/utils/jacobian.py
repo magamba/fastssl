@@ -4,22 +4,23 @@ import torch.nn as nn
 import numpy as np
 from tqdm import tqdm
 
-def split_batch(data_loader, batch_size):
-    """ Splits batches from data_loader into smaller batches and yields
-        them. 
+def get_split_batch_gen(data_loader, batch_size, desc=""):
+    """ Creates a generator that splits batches from data_loader into smaller batches
+        of @batch_size and yields them. Also returns a tqdm progress bar.
+        
+        Note: For batches (img, label, img1, img2, ...) the generator discards any augmentations and labels, 
+              and only returns the first item (img).
     """
-    try:
-        dl_batch_size = data_loader.batch_size
-    except AttributeError:
-        dl_batch_size = data_loader.iterable.batch_size
+    dl_batch_size = data_loader.batch_size
     assert dl_batch_size % batch_size == 0, f"Error: batch size ({batch_size}) must divide data loader's batch size ({dl_batch_size}) for Jacobian computation."
-    for batch in data_loader:
-        batch = batch[0] # discard labels and augmentations
-        for inp in torch.split(batch, batch_size):
-            yield inp
+    progress_bar = tqdm(data_loader, desc=desc)
+    
+    # generator discards labels and augmentations
+    split_batch_gen = (inp for batch in data_loader for inp in torch.split(batch[0], batch_size))
+    return split_batch_gen, progress_bar
 
 
-def get_jacobian_fn(net, layer, data_loader):
+def get_jacobian_fn(net, layer, data_loader, batch_size):
     """Wrapper to initialize Jacobian computation algorithm
     """     
     activations = {}
@@ -43,9 +44,9 @@ def get_jacobian_fn(net, layer, data_loader):
     def jacobian_fn(x):
         # discard augmentations
         inp = x[0] if isinstance(x, (list, tuple)) else x
+        nsamples = inp.shape[0]
         inp = tile_input(inp)
         inp.requires_grad_(True)
-        nsamples = inp.shape[0]
         
         _ = net(inp)
         features = activations["features"]
@@ -71,10 +72,10 @@ def input_jacobian(jacobian_fn, data_loader, batch_size=128, use_cuda=False, lab
     num_samples, num_clean, num_corr = 0, 0, 0
     device = torch.device("cuda:0") if use_cuda else torch.device("cpu")
     
-    progress_bar = tqdm(data_loader, desc="Feature Input Jacobian")
     num_batches = len(data_loader) * len(data_loader) // batch_size
+    split_batch_gen, progress_bar = get_split_batch_gen(data_loader, batch_size, desc="Feature Input Jacobian")
     
-    for i, x in enumerate(split_batch(progress_bar, batch_size)):
+    for i, x in enumerate(split_batch_gen):
         x = x.to(device) # discard augmentations
         num_samples += x.shape[0]
         
