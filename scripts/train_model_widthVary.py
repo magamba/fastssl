@@ -645,6 +645,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                    "lr" : [],
         }
         
+    handle = None
     if args.track_jacobian:
         results["feature_input_jacobian"] = []
         if label_noise > 0:
@@ -653,7 +654,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             
         jacobian_fn, handle = get_jacobian_fn(
             net=model,
-            layer=model.fc if args.algorithm == "linear" else model.backbone.proj,
+            layer=None if args.algorithm == "linear" else model.backbone.proj,
             data_loader=loaders["train"],
         )
         
@@ -894,7 +895,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             else:
                 log_wandb(results, step=epoch, skip_keys=['eigenspectrum', 'base_width'])
 
-    if args.track_jacobian:
+    if handle is not None:
         handle.remove()
     return results
 

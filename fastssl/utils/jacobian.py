@@ -40,20 +40,23 @@ def split_batch_gen(data_loader, batch_size, label_noise=0):
 
 def get_jacobian_fn(net, layer, data_loader):
     """Wrapper to initialize Jacobian computation algorithm
-    """     
+    """
     activations = {}
     def hook_fn(m,i,o):
         activations["features"] = i[0]
     
-    handle = layer.register_forward_hook(hook_fn)
+    handle = None if layer is None else layer.register_forward_hook(hook_fn)
 
     device = next(net.parameters()).device
     batch = next(iter(data_loader))
     if isinstance(batch, (tuple, list)):
         batch = batch[0]
     batch = batch.to(device)
-    _ = net(batch)
-    ndims = np.prod(activations["features"].shape[1:])
+    output = net(batch)
+    if layer is None:
+        ndims = np.prod(output.shape[1:])
+    else:
+        ndims = np.prod(activations["features"].shape[1:])
     
     def tile_input(x):
         tile_shape = (ndims,) + (1,) * len(x.shape[1:])
@@ -66,8 +69,8 @@ def get_jacobian_fn(net, layer, data_loader):
         inp = tile_input(inp)
         inp.requires_grad_(True)
         
-        _ = net(inp)
-        features = activations["features"]
+        output = net(inp)
+        features = output if layer is None else activations["features"]
         j = jacobian_features(inp, features, nsamples, ndims)
         inp.grad = None
         
