@@ -13,9 +13,12 @@ def split_batch_gen(data_loader, batch_size, label_noise=0):
     """
     dl_batch_size = data_loader.batch_size
     assert dl_batch_size % batch_size == 0, f"Error: batch size ({batch_size}) must divide data loader's batch size ({dl_batch_size}) for Jacobian computation."
+    last_batch = len(data_loader) -1
     
     # generator discards labels and augmentations
-    for batch in data_loader:
+    for batch_id, batch in enumerate(data_loader):
+        if batch_id == last_batch and not data_loader.drop_last:
+            batch_size = 1 # avoid splitting the last batch, which might not be divisible by batch_size
         if label_noise > 0:
             imgs, targets, ground_truths, sample_ids = batch[:4]
             for img, target, ground_truth, sample_id in zip(
@@ -133,7 +136,7 @@ def input_jacobian(jacobian_fn, data_loader, batch_size=128, use_cuda=False, lab
             
         progress_bar.set_description(
             "Batch: [{}/{}] avg Jacobian norm: {:.2f} avg Jacobian norm clean: {:.2f} avg Jacobian norm corr: {:.2f}".format(
-                i, num_batches, avg_norm, avg_norm_clean, avg_norm_corr
+                i, num_batches -1, avg_norm, avg_norm_clean, avg_norm_corr
             )
         )
     
