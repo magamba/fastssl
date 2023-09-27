@@ -20,7 +20,7 @@ def get_split_batch_gen(data_loader, batch_size, desc=""):
     return split_batch_gen, progress_bar
 
 
-def get_jacobian_fn(net, layer, data_loader, batch_size):
+def get_jacobian_fn(net, layer, data_loader):
     """Wrapper to initialize Jacobian computation algorithm
     """     
     activations = {}
