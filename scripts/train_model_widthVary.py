@@ -896,20 +896,20 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                     (epoch, np.sum(activations_eigen) / np.max(np.abs(activations_eigen)))
                 )
                 # print(results['alpha'])
-            if args.track_jacobian:
-                # compute Jacobian before training starts!
-                jacobian, jacobian_clean, jacobian_corr = input_jacobian(
-                    net=model,
-                    layer=model.backbone.proj,
-                    data_loader=loaders["train"], 
-                    batch_size=args.jacobian_batch_size, 
-                    use_cuda=True, 
-                    label_noise=label_noise,
-                )
-                results["feature_input_jacobian"].append((epoch, jacobian))
-                if args.label_noise > 0:
-                    results["feature_input_jacobian_clean"].append((epoch, jacobian_clean))
-                    results["feature_input_jacobian_corr"].append((epoch, jacobian_corr))
+#            if args.track_jacobian:
+#                # compute Jacobian before training starts!
+#                jacobian, jacobian_clean, jacobian_corr = input_jacobian(
+#                    net=model,
+#                    layer=model.backbone.proj,
+#                    data_loader=loaders["train"], 
+#                    batch_size=args.jacobian_batch_size, 
+#                    use_cuda=True, 
+#                    label_noise=label_noise,
+#                )
+#                results["feature_input_jacobian"].append((epoch, jacobian))
+#                if args.label_noise > 0:
+#                    results["feature_input_jacobian_clean"].append((epoch, jacobian_clean))
+#                    results["feature_input_jacobian_corr"].append((epoch, jacobian_corr))
 
         results['base_width'] = int(str(args.model).split("_")[1].replace("width", ""))
         if use_wandb:
