@@ -79,8 +79,8 @@ def get_jacobian_fn(net, layer, data_loader):
     return jacobian_fn, handle
 
 
-def input_jacobian(jacobian_fn, data_loader, batch_size=128, use_cuda=False, label_noise=0):
-    """ Compute average input Jacobian norm of features using @jacobian_fn
+def input_jacobian(net, layer, data_loader, batch_size=128, use_cuda=False, label_noise=0):
+    """ Compute average input Jacobian norm of features of @layer of @net using @data_loader.
     
         If label_noise is nonzero, also separately compute the average input 
         Jacobian norm on samples with corrupted and uncorrupted labels respectively.
@@ -89,6 +89,8 @@ def input_jacobian(jacobian_fn, data_loader, batch_size=128, use_cuda=False, lab
               size when iterating over @data_loader, in order for (potentially) large batches
               to be broken down into smaller chunks.
     """  
+    jacobian_fn, handle = get_jacobian_fn(net, layer, data_loader)
+    
     jacobian_norm, jacobian_norm_clean, jacobian_norm_corr = 0., 0., 0.
     num_samples, num_clean, num_corr = 0, 0, 0
     device = torch.device("cuda:0") if use_cuda else torch.device("cpu")
@@ -143,6 +145,7 @@ def input_jacobian(jacobian_fn, data_loader, batch_size=128, use_cuda=False, lab
             )
         )
     
+    handle.remove()
     return avg_norm, avg_norm_clean, avg_norm_corr
 
 

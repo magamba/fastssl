@@ -57,7 +57,7 @@ from fastssl.utils.base import (
 )
 from fastssl.utils.label_correction import eval_step_clean_restored
 import fastssl.utils.powerlaw as powerlaw
-from fastssl.utils.jacobian import get_jacobian_fn, input_jacobian
+from fastssl.utils.jacobian import input_jacobian
 
 Section("training", "Fast CIFAR-10 training").params(
     dataset=Param(str, "dataset", default="cifar10"),
@@ -645,19 +645,12 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                    "lr" : [],
         }
         
-    handle = None
     if args.track_jacobian:
         results["feature_input_jacobian"] = []
         if label_noise > 0:
             results["feature_input_jacobian_clean"] = []
             results["feature_input_jacobian_corr"] = []
             
-        jacobian_fn, handle = get_jacobian_fn(
-            net=model,
-            layer=None if args.algorithm == "linear" else model.backbone.proj,
-            data_loader=loaders["train"],
-        )
-        
     if label_noise > 0 and args.algorithm == "linear":
         results.update(
             {"train_acc_1_clean": [],
@@ -675,7 +668,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 activations = powerlaw.generate_activations_prelayer(
                     net=model,
                     layer=model.fc,
-                    data_loader=loaders["test"],
+                    data_loader=loaders["train"],
                     use_cuda=True,
                 )
                 activations_eigen = powerlaw.get_eigenspectrum(activations)
@@ -704,7 +697,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 net=model,
                 layer=model.fc,
                 # data_loader=loaders['test'],trange=np.arange(50,200),
-                data_loader=loaders["test"],
+                data_loader=loaders["train"],
                 trange=np.arange(5, 50),
                 use_cuda=True,
             )
@@ -716,7 +709,12 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
 
         if args.track_jacobian: # track input jacobian for linear regression on pretrained features
             jacobian, jacobian_clean, jacobian_corr = input_jacobian(
-                jacobian_fn=jacobian_fn, data_loader=loaders["train"], batch_size=args.jacobian_batch_size, use_cuda=True, label_noise=label_noise
+                net=model,
+                layer=None,
+                data_loader=loaders["train"], 
+                batch_size=args.jacobian_batch_size, 
+                use_cuda=True, 
+                label_noise=label_noise,
             )
             results["feature_input_jacobian"] = [jacobian]
             if args.label_noise > 0:
@@ -754,7 +752,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 activations = powerlaw.generate_activations_prelayer(
                     net=model,
                     layer=model.backbone.proj,
-                    data_loader=loaders["test"],
+                    data_loader=loaders["train"],
                     use_cuda=True,
                 )
                 activations_eigen = powerlaw.get_eigenspectrum(activations)
@@ -777,7 +775,12 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             if args.track_jacobian:
                 # compute Jacobian before training starts!
                 jacobian, jacobian_clean, jacobian_corr = input_jacobian(
-                    jacobian_fn=jacobian_fn, data_loader=loaders["train"], batch_size=args.jacobian_batch_size, use_cuda=True, label_noise=label_noise
+                    net=model,
+                    layer=None if args.algorithm == "linear" else model.backbone.proj,
+                    data_loader=loaders["train"], 
+                    batch_size=args.jacobian_batch_size, 
+                    use_cuda=True, 
+                    label_noise=label_noise,
                 )
                 results["feature_input_jacobian"].append((epoch -1, jacobian))
                 if args.label_noise > 0:
@@ -827,7 +830,12 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             if args.track_jacobian and epoch % args.log_interval == 0:
                 # compute Jacobian before training starts!
                 jacobian, jacobian_clean, jacobian_corr = input_jacobian(
-                    jacobian_fn=jacobian_fn, data_loader=loaders["train"], batch_size=args.jacobian_batch_size, use_cuda=True, label_noise=label_noise
+                    net=model,
+                    layer=None,
+                    data_loader=loaders["train"], 
+                    batch_size=args.jacobian_batch_size, 
+                    use_cuda=True, 
+                    label_noise=label_noise,
                 )
                 results["feature_input_jacobian"].append((epoch, jacobian))
                 if args.label_noise > 0:
@@ -851,7 +859,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 activations = powerlaw.generate_activations_prelayer(
                     net=model,
                     layer=model.backbone.proj,
-                    data_loader=loaders["test"],
+                    data_loader=loaders["train"],
                     use_cuda=True,
                 )
                 activations_eigen = powerlaw.get_eigenspectrum(activations)
@@ -891,7 +899,12 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             if args.track_jacobian:
                 # compute Jacobian before training starts!
                 jacobian, jacobian_clean, jacobian_corr = input_jacobian(
-                    jacobian_fn=jacobian_fn, data_loader=loaders["train"], batch_size=args.jacobian_batch_size, use_cuda=True, label_noise=label_noise
+                    net=model,
+                    layer=model.backbone.proj,
+                    data_loader=loaders["train"], 
+                    batch_size=args.jacobian_batch_size, 
+                    use_cuda=True, 
+                    label_noise=label_noise,
                 )
                 results["feature_input_jacobian"].append((epoch, jacobian))
                 if args.label_noise > 0:
@@ -905,8 +918,6 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             else:
                 log_wandb(results, step=epoch, skip_keys=['eigenspectrum', 'base_width'])
 
-    if handle is not None:
-        handle.remove()
     return results
 
 
