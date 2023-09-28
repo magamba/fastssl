@@ -665,13 +665,13 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
     if args.algorithm == "linear":
         if args.use_autocast:
             with autocast():
-                activations = powerlaw.generate_activations_prelayer(
+                activations = powerlaw.generate_activations_prelayer_torch(
                     net=model,
                     layer=model.fc,
                     data_loader=loaders["train"],
                     use_cuda=True,
                 )
-                activations_eigen = powerlaw.get_eigenspectrum(activations)
+                activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
                 try:
                     tmin, tmax = 3, min(50, activations.shape[1])
                     alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
@@ -749,13 +749,13 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
         if epoch == 1:
             if args.track_alpha:
                 # compute alpha before training starts!
-                activations = powerlaw.generate_activations_prelayer(
+                activations = powerlaw.generate_activations_prelayer_torch(
                     net=model,
                     layer=model.backbone.proj,
                     data_loader=loaders["train"],
                     use_cuda=True,
                 )
-                activations_eigen = powerlaw.get_eigenspectrum(activations)
+                activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
                 tmin, tmax = 3, min(100, activations.shape[1])
                 alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
                     activations_eigen, trange=np.arange(tmin, tmax)
@@ -856,13 +856,13 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             torch.save(state, ckpt_path)
             if args.track_alpha:
                 # compute alpha at intermediate training steps
-                activations = powerlaw.generate_activations_prelayer(
+                activations = powerlaw.generate_activations_prelayer_torch(
                     net=model,
                     layer=model.backbone.proj,
                     data_loader=loaders["train"],
                     use_cuda=True,
                 )
-                activations_eigen = powerlaw.get_eigenspectrum(activations)
+                activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
                 tmin, tmax = 3, min(100, activations.shape[1])
                 alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
                     activations_eigen, trange=np.arange(tmin, tmax)
