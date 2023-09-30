@@ -314,13 +314,13 @@ if noise_level > 0:
 # oldnoise=5; \
 # for n in 5 10 15 20 40 60 80 100; do \
 #     echo "Noise: $n"; \
-#     sed_string="s/noise_level = 5$oldnoise""/noise_level = $n/"; \
+#     sed_string="0,/noise_level = $oldnoise""/{s/noise_level = $oldnoise""/noise_level = $n/}"; \
 #     echo "Sed string: $sed_string"; \
 #     sed -i "$sed_string" write_ffcv_datasets.py; \
 #     oldnoise=$n; \
 #     python write_ffcv_datasets.py; \
 # done; \
-# sed_string="s/noise_level = 5$oldnoise""/noise_level = 10/"; \
+# sed_string="0,/noise_level = $oldnoise""//{s/noise_level = $oldnoise""/noise_level = 5/}"; \
 # echo "Sed string: $sed_string"; \
 # sed -i "$sed_string" write_ffcv_datasets.py; \
 # unset oldnoise sed_string n;
