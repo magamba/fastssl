@@ -161,11 +161,22 @@ def build_dataloaders(
             #     splits=["unlabeled"],
             #     batch_size=batch_size,
             #     num_workers=num_workers)
-            return stl_ffcv(train_dataset, val_dataset, batch_size, num_workers)
+            return stl_ffcv(
+                train_dataset,
+                val_dataset,
+                batch_size,
+                num_workers,
+                num_augmentations=num_augmentations,
+            )
         elif algorithm == "linear":
             default_linear_bsz = 256
             return stl_classifier_ffcv(
-                train_dataset, val_dataset, default_linear_bsz, num_workers, label_noise
+                train_dataset,
+                val_dataset,
+                default_linear_bsz,
+                num_workers,
+                num_augmentations=num_augmentations,
+                label_noise=label_noise,
             )
             # datadir,
             # splits=["train", "test"],
