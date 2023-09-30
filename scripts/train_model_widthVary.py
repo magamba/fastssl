@@ -671,7 +671,8 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                     data_loader=loaders["train"],
                     use_cuda=True,
                 )
-                activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
+            activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
+            with autocast():
                 try:
                     tmin, tmax = 3, min(50, activations.shape[1])
                     alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
@@ -691,6 +692,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
                 results["effective_rank"] = np.sum(activations_eigen) / np.max(np.abs(activations_eigen))
                 results["feature_ambient_dim"] = np.prod(activations.shape[1:])
+                del activations
                 print("Initial alpha", results["alpha"])
         else:
             alpha_arr, R2_arr, R2_100_arr = powerlaw.stringer_get_powerlaw_batch(
@@ -770,6 +772,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 results["effective_rank"].append(
                     (epoch -1, np.sum(activations_eigen) / np.max(np.abs(activations_eigen)))
                 )
+                del activations
                 print("Initial alpha", results["alpha"])
             
             if args.track_jacobian:
@@ -867,6 +870,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
                     activations_eigen, trange=np.arange(tmin, tmax)
                 )
+                del activations
                 if args.adaptive_ssl:
                     alpha_gt = max(0, alpha - 1.2)  # check if alpha > 1.2
                     alpha_lt = max(0, 0.8 - alpha)  # check if alpha < 0.8
