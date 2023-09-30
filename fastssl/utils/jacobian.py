@@ -12,13 +12,10 @@ def split_batch_gen(data_loader, batch_size, label_noise=0):
               and only returns the first item (img).
     """
     dl_batch_size = data_loader.batch_size
-    assert dl_batch_size % batch_size == 0, f"Error: batch size ({batch_size}) must divide data loader's batch size ({dl_batch_size}) for Jacobian computation."
-    last_batch = len(data_loader) -1
-    
+    assert batch_size <= dl_batch_size, f"Error: Jacobian batch size ({batch_size}) larger than data loader's batch size ({dl_batch_size})."
+
     # generator discards labels and augmentations
     for batch_id, batch in enumerate(data_loader):
-        if batch_id == last_batch and not data_loader.drop_last:
-            batch_size = batch[0].shape[0] # avoid splitting the last batch, which might not be divisible by batch_size
         if label_noise > 0:
             imgs, targets, ground_truths, sample_ids = batch[:4]
             for img, target, ground_truth, sample_id in zip(
@@ -74,6 +71,7 @@ def get_jacobian_fn(net, layer, data_loader):
         j = jacobian_features(inp, features, nsamples, ndims)
         inp.grad = None
         
+        activations["features"] = None
         return j
     
     return jacobian_fn, handle
@@ -100,7 +98,7 @@ def input_jacobian(net, layer, data_loader, batch_size=128, use_cuda=False, labe
         split_batch_gen(
             data_loader, batch_size, label_noise
         ),
-        desc="Feature Input Jacobian", 
+        desc="Feature Input Jacobian",
         total = num_batches +1,
     )
     
@@ -144,8 +142,8 @@ def input_jacobian(net, layer, data_loader, batch_size=128, use_cuda=False, labe
                 i, num_batches, avg_norm, avg_norm_clean, avg_norm_corr
             )
         )
-    
-    handle.remove()
+    if handle is not None:
+        handle.remove()
     return avg_norm, avg_norm_clean, avg_norm_corr
 
 
