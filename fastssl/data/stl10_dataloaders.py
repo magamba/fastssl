@@ -82,10 +82,10 @@ def gen_image_label_pipeline(
     """
     Args:
         train_dataset : path to train dataset
-        val_dataset   : path to test dataset 
+        val_dataset   : path to test dataset
         batch_size    : batch-size
         num_workers   : number of workers
-    Returns 
+    Returns
         loaders       : dict('train': dataloader, 'test': dataloader)
     """
 
@@ -93,7 +93,7 @@ def gen_image_label_pipeline(
         'train': train_dataset,
         'test': val_dataset
     }
-    
+
     loaders = {}
 
     for split in ['train', 'test']:
@@ -105,11 +105,11 @@ def gen_image_label_pipeline(
         # ordering = OrderOption.RANDOM #if split == 'train' else OrderOption.SEQUENTIAL
 
         pipelines = {'image' : image_pipeline, 'label' : label_pipeline}
-        if label_noise > 0:
+        if label_noise > 0 and split == "train":
             pipelines.update({'ground_truth': label_pipeline, 'sample_idx': label_pipeline})
         loaders[split] = Loader(
             datadir[split],
-            batch_size=batch_size,  
+            batch_size=batch_size,
             num_workers=num_workers,
             os_cache=True,
             order=ordering,
@@ -129,10 +129,10 @@ def gen_image_label_pipeline_ffcv_test(
     """
     Args:
         train_dataset : path to train dataset
-        val_dataset   : path to test dataset 
+        val_dataset   : path to test dataset
         batch_size    : batch-size
         num_workers   : number of workers
-    Returns 
+    Returns
         loaders       : dict('train': dataloader, 'test': dataloader)
     """
 
@@ -140,7 +140,7 @@ def gen_image_label_pipeline_ffcv_test(
         'train': train_dataset,
         'test': val_dataset
     }
-    
+
     loaders = {}
 
     for split in ['train']:
@@ -154,7 +154,7 @@ def gen_image_label_pipeline_ffcv_test(
         # breakpoint()
         loaders[split] = Loader(
             datadir[split],
-            batch_size=batch_size,  
+            batch_size=batch_size,
             num_workers=num_workers,
             os_cache=True,
             order=ordering,
@@ -168,12 +168,12 @@ def gen_image_label_pipeline_ffcv_test(
         label_pipeline  = gen_label_pipeline(device=device)
         image_pipeline = gen_image_pipeline(
             device=device, transform_cls=STLClassifierTransform, rescale=rescale)
-        
+
         ordering = OrderOption.SEQUENTIAL
 
         loaders[split] = Loader(
             datadir[split],
-            batch_size=batch_size,  
+            batch_size=batch_size,
             num_workers=num_workers,
             os_cache=True,
             order=ordering,
@@ -208,7 +208,7 @@ def stl_classifier_ffcv(
     num_workers=None,
     device="cuda:0",
     label_noise=0):
-    
+
     transform_cls = STLClassifierTransform
     return gen_image_label_pipeline(
         train_dataset=train_dataset,
