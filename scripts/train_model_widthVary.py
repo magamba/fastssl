@@ -397,7 +397,7 @@ def build_optimizer(model, args=None):
         default_weight_decay = args.weight_decay
         warmup_epochs = 10
         opt = SGD(model.parameters(), lr=default_lr, weight_decay=default_weight_decay, momentum=0.9)
-        warmup_lambda = lambda epoch: float(epoch / warmup_epochs)
+        warmup_lambda = lambda epoch: float((epoch +1) / warmup_epochs)
         warmup_scheduler = lr_scheduler.LambdaLR(opt, lr_lambda=warmup_lambda)       
         cosine_scheduler = lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
         scheduler = lr_scheduler.SequentialLR(opt, [warmup_scheduler, cosine_scheduler], [warmup_epochs])
@@ -503,9 +503,10 @@ def train_step(
         # import ray
         # if ray.tune.is_session_enabled():
         #     tune.report(epoch=epoch, loss=total_loss/num_batches)
+        lr = optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0]
         train_bar.set_description(
-            "Train Epoch: [{}/{}] Loss: {:.4f}".format(
-                epoch, args.epochs, total_loss / num_batches
+            "Train Epoch: [{}/{}] Lr: {:.4f} Loss: {:.4f}".format(
+                epoch, args.epochs, lr, total_loss / num_batches
             )
         )
     if scheduler is not None:
