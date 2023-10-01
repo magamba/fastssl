@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-#SBATCH -A berzelius-2023-44
+#SBATCH -A berzelius-2023-229
 #SBATCH --gpus=1
 #SBATCH -t 6:00:00
 #SBATCH -C fat
@@ -19,12 +19,19 @@ export SLURM_TMPDIR="/scratch/local"
 
 WANDB__SERVICE_WAIT=300
 
-dataset='cifar10'
+dataset='stl10'
+#dataset='cifar10'
 if [ $dataset = 'stl10' ]
 then
     batch_size=256
+    jac_batch_size=4
+    proj_str="stl10-"
+    ckpt_str="-stl10"
 else
     batch_size=512
+    jac_batch_size=4
+    proj_str=""
+    ckpt_str=""
 fi
 
 SEEDS=3
@@ -43,8 +50,8 @@ model=resnet18proj_width${width}
 
 ## configure checkpointing dirs and dataset paths
 
-wandb_projname='ssl-effective_rank+overfit'
-checkpt_dir="${SAVE_DIR}"/"$NAME"
+wandb_projname="$proj_str"'ssl-effective_rank+overfit'
+checkpt_dir="${SAVE_DIR}"/"$NAME""$ckpt_str"
 
 if [ ! -d "$checkpt_dir" ]
 then
@@ -67,6 +74,8 @@ python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.ya
                     --training.log_interval=10 \
                     --training.track_alpha=True \
                     --training.track_jacobian=True \
+                    --training.jacobian_batch_size=$jac_batch_size \
+                    --training.weight_decay=1e-5 \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
 
@@ -100,6 +109,7 @@ python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml
                     --training.val_dataset=${testset}_test.beton \
                     --training.log_interval=10 \
                     --training.track_jacobian=True \
+                    --training.jacobian_batch_size=32 \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
 new_status=$?
@@ -115,8 +125,8 @@ cp -r $SLURM_TMPDIR/feats/* $checkpt_dir/feats/
 
 for noise in 5 10 15 20 40 60 80 100; do
     # running eval with label noise
-    wandb_projname='ssl-effective_rank+overfit-noise'$noise
-    checkpt_dir="${SAVE_DIR}"/"$NAME""_noise"$noise
+    wandb_projname="$proj_str"'ssl-effective_rank+overfit-noise'$noise
+    checkpt_dir="${SAVE_DIR}"/"$NAME""_noise"$noise"$ckpt_str"
 
     if [ ! -d "$checkpt_dir" ]
     then
@@ -154,6 +164,7 @@ for noise in 5 10 15 20 40 60 80 100; do
                         --training.log_interval=10 \
                         --training.label_noise=$noise \
                         --training.track_jacobian=True \
+                        --training.jacobian_batch_size=32 \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                         --logging.wandb_project=$wandb_projname
 
