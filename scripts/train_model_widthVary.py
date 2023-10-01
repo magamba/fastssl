@@ -397,8 +397,8 @@ def build_optimizer(model, args=None):
         default_weight_decay = args.weight_decay
         warmup_epochs = 10
         opt = SGD(model.parameters(), lr=default_lr, weight_decay=default_weight_decay, momentum=0.9)
-        def warmup_scheduler(step: int):
-            return default_lr * float(step / warmup_epochs)
+        warmup_lambda = lambda epoch: float(epoch / warmup_epochs)
+        warmup_scheduler = lr_scheduler.LambdaLR(opt, lr_lambda=warmup_lambda)       
         cosine_scheduler = lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
         scheduler = lr_scheduler.SequentialLR(opt, [warmup_scheduler, cosine_scheduler], [warmup_epochs])
     elif args.algorithm == "linear":
