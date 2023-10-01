@@ -384,7 +384,7 @@ def build_optimizer(model, args=None):
         optimizer : optimizer for training model
     """
     scheduler = None
-    if args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol"):
+    if args.algorithm in ("BarlowTwins", "ssl", "byol"):
         opt = Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 #    elif args.algorithm == "linear":
 #        default_lr = 1e-3
@@ -392,6 +392,15 @@ def build_optimizer(model, args=None):
 #        return Adam(
 #            model.parameters(), lr=default_lr, weight_decay=default_weight_decay
 #        )
+    elif args.algorithm == "SimCLR":
+        default_lr = args.lr
+        default_weight_decay = args.weight_decay
+        warmup_epochs = 10
+        opt = SGD(model.parameters(), lr=default_lr, weight_decay=default_weight_decay, momentum=0.9)
+        def warmup_scheduler(step: int):
+            return default_lr * float(step / warmup_epochs)
+        cosine_scheduler = lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
+        scheduler = lr_scheduler.SequentialLR(opt, [warmup_scheduler, cosine_scheduler], [warmup_epochs])
     elif args.algorithm == "linear":
         default_lr = 1e-1
         default_weight_decay = 0
