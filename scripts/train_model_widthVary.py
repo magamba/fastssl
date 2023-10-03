@@ -87,7 +87,7 @@ Section("training", "Fast CIFAR-10 training").params(
     ckpt_dir=Param(
         str, "ckpt-dir", default="/data/krishna/research/results/0319/001/checkpoints"
     ),
-    use_autocast=Param(bool, "autocast fp16", default=True),
+    use_autocast=Param(bool, "autocast fp16", default=False),
     track_alpha=Param(bool, "Track evolution of alpha", default=False),
     track_jacobian=Param(bool, "Track input Jacobian of the last feature layer", default=False),
     jacobian_batch_size=Param(int, "Batch size to use for Jacobian computation (must divide training.batch_size).", default=128),
@@ -392,13 +392,14 @@ def build_optimizer(model, args=None):
 #        return Adam(
 #            model.parameters(), lr=default_lr, weight_decay=default_weight_decay
 #        )
-    elif args.algorithm == "SimCLR":
+    elif args.algorithm in ("SimCLR",):
         default_lr = args.lr
         default_weight_decay = args.weight_decay
         warmup_epochs = 10
+#        opt = SGD(model.parameters(), lr=default_lr / 10., weight_decay=default_weight_decay)
         opt = SGD(model.parameters(), lr=default_lr, weight_decay=default_weight_decay, momentum=0.9)
         warmup_lambda = lambda epoch: float(epoch) / float(warmup_epochs) if epoch > 0 else 1. / float(warmup_epochs)
-        warmup_scheduler = lr_scheduler.LambdaLR(opt, lr_lambda=warmup_lambda)       
+        warmup_scheduler = lr_scheduler.LambdaLR(opt, lr_lambda=warmup_lambda)
         cosine_scheduler = lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
         scheduler = lr_scheduler.SequentialLR(opt, [warmup_scheduler, cosine_scheduler], [warmup_epochs])
     elif args.algorithm == "linear":
