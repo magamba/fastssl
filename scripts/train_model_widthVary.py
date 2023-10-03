@@ -90,6 +90,7 @@ Section("training", "Fast CIFAR-10 training").params(
     use_autocast=Param(bool, "autocast fp16", default=False),
     track_alpha=Param(bool, "Track evolution of alpha", default=False),
     track_jacobian=Param(bool, "Track input Jacobian of the last feature layer", default=False),
+    jacobian_only=Param(bool, "Load model weights and compute input Jacobian of the last feature layer", default=False),
     jacobian_batch_size=Param(int, "Batch size to use for Jacobian computation (must divide training.batch_size).", default=128),
     precache=Param(bool, "Precache outputs of network", default=False),
     adaptive_ssl=Param(bool, "Use alpha to regularize SSL loss", default=False),
@@ -922,20 +923,6 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                     (epoch, np.sum(activations_eigen) / np.max(np.abs(activations_eigen)))
                 )
                 # print(results['alpha'])
-#            if args.track_jacobian:
-#                # compute Jacobian before training starts!
-#                jacobian, jacobian_clean, jacobian_corr = input_jacobian(
-#                    net=model,
-#                    layer=model.backbone.proj,
-#                    data_loader=loaders["train"], 
-#                    batch_size=args.jacobian_batch_size, 
-#                    use_cuda=True, 
-#                    label_noise=label_noise,
-#                )
-#                results["feature_input_jacobian"].append((epoch, jacobian))
-#                if args.label_noise > 0:
-#                    results["feature_input_jacobian_clean"].append((epoch, jacobian_clean))
-#                    results["feature_input_jacobian_corr"].append((epoch, jacobian_corr))
 
         results['base_width'] = int(str(args.model).split("_")[1].replace("width", ""))
         if use_wandb:
@@ -943,6 +930,24 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 log_wandb(results, step=epoch, skip_keys=['eigenspectrum'])
             else:
                 log_wandb(results, step=epoch, skip_keys=['eigenspectrum', 'base_width'])
+                
+    if args.track_jacobian and args.algorithm != "linear":
+        # compute Jacobian before training starts!
+        jacobian, jacobian_clean, jacobian_corr = input_jacobian(
+            net=model,
+            layer=model.backbone.proj,
+            data_loader=loaders["train"], 
+            batch_size=args.jacobian_batch_size, 
+            use_cuda=True, 
+            label_noise=label_noise,
+        )
+        results["feature_input_jacobian"].append((args.epochs, jacobian))
+        if args.label_noise > 0:
+            results["feature_input_jacobian_clean"].append((args.epochs, jacobian_clean))
+            results["feature_input_jacobian_corr"].append((args.epochs, jacobian_corr))
+        
+        if use_wandb:
+            log_wandb(results, step=args.epochs, skip_keys=['eigenspectrum', 'base_width'])
 
     return results
 
@@ -1034,7 +1039,33 @@ def run_experiment(args):
             "npy",
         )
         np.save(save_path, results)
-
+    elif training.jacobian_only:
+        print("Computing input Jacobian of SSL features, no training")
+        results = {}
+        jacobian, jacobian_clean, jacobian_corr = input_jacobian(
+            net=model,
+            layer=model.backbone.proj,
+            data_loader=loaders["train"], 
+            batch_size=args.jacobian_batch_size, 
+            use_cuda=True, 
+            label_noise=label_noise,
+        )
+        results["feature_input_jacobian"] = [jacobian]
+        if args.label_noise > 0:
+            results["feature_input_jacobian_clean"] = [jacobian_clean]
+            results["feature_input_jacobian_corr"] = [jacobian_corr]
+        
+        if use_wandb:
+            log_wandb(results, step=training.epochs)
+            
+        save_path = gen_ckpt_path(
+            training,
+            eval,
+            training.epochs,
+            "results_{}_jacobian".format(training.dataset),
+            "npy",
+        )
+        np.save(save_path, results)
     else:
         # get loss function
         loss_fn = build_loss_fn(training)
