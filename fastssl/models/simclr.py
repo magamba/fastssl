@@ -99,6 +99,10 @@ def SimCLRLoss(model, inp, _temperature=0.05):
 #    # z1 = model(x1)   #NXD
 #    # z2 = model(x2)   #NXD
 
+#    z_nan = torch.as_tensor([torch.any(torch.isnan(z)) for z in z_list], dtype=torch.bool)
+#    z_inf = torch.as_tensor([torch.any(torch.isinf(z)) for z in z_list], dtype=torch.bool)
+#    print(f"z_list NaNs: {torch.any(z_nan)} z_list inf: {torch.any(z_inf)}")
+
 #    z_norm_list = [(z - z.mean(0)) / z.std(0) for z in z_list]
 #    # z1_norm = F.normalize(z1, dim=-1)
 #    # z2_norm = F.normalize(z2, dim=-1)
@@ -130,6 +134,8 @@ def SimCLRLoss(model, inp, _temperature=0.05):
 #        )
 
 #        log_likelihood = -logits + torch.log(exp_logits.sum(dim=-1, keepdim=True) + eps)
+#        print(f"Logits NaNs: {torch.any(torch.isnan(logits))} Exp logits NaNs: {torch.any(torch.isnan(exp_logits))} Log Logits NaNs: {torch.any(torch.isnan(torch.log(exp_logits.sum(dim=-1, keepdim=True) + eps)))} Log-likelihood NaNs: {torch.any(torch.isnan(log_likelihood))}")
+#        print(f"Logits infs: {torch.any(torch.isinf(logits))} Exp logits infs: {torch.any(torch.isinf(exp_logits))} Log Logits infs: {torch.any(torch.isinf(torch.log(exp_logits.sum(dim=-1, keepdim=True) + eps)))} Log-likelihood infs: {torch.any(torch.isinf(log_likelihood))}")
 
 #        loss += (log_likelihood * mask).sum() / mask.sum()
 #    loss = loss / num_augs
