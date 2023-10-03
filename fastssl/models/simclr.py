@@ -43,8 +43,8 @@ def SimCLRLoss(model, inp, _temperature=0.05):
         z1_norm_large = z1_norm
         z2_norm_large = z2_norm
         
-        labels = F.one_hot(torch.arange(bsz), bsz*2)
-        masks = F.one_hot(torch.arange(bsz), bsz)
+        labels = F.one_hot(torch.arange(bsz), bsz*2).float().cuda(non_blocking=True)
+        masks = F.one_hot(torch.arange(bsz), bsz).float().cuda(non_blocking=True)
         
         logits_aa = torch.matmul(z1_norm, z1_norm_large.T) / _temperature
         logits_aa = logits_aa - masks
@@ -55,10 +55,10 @@ def SimCLRLoss(model, inp, _temperature=0.05):
         logits_ba = torch.matmul(z2_norm, z1_norm_large.T) / _temperature
         
         softmax_a = F.softmax(
-            torch.cat((logits_ab, logits_aa), 1)
+            torch.cat((logits_ab, logits_aa), 1), dim=1
         )
         softmax_b = F.softmax(
-            torch.cat((logits_ba, logits_bb), 1)
+            torch.cat((logits_ba, logits_bb), 1), dim=1
         )
         loss_a = F.cross_entropy(
             softmax_a, labels
