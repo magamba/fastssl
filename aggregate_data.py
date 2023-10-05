@@ -180,6 +180,7 @@ def aggregate_data(destdir=plots_path):
                                     allow_pickle=True
                                 ).tolist()
                                 for m_id, metric in enumerate(figure1_conf["performance_metrics"]):
+                                    if noise == 0 and metric in ["train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored"]: continue
                                     logger.info(f"Parsing {base_model}_{width} epoch {epoch} {metric} seed {s_id}")
                                     plot_data[algorithm][dataset][base_model][n_id, w_id, m_id, s_id] = parse_stats(fname, stats, metric, epoch)
                                 
