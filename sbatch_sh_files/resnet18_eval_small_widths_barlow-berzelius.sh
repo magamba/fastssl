@@ -61,9 +61,9 @@ NCONFS=$((NOISE * SEEDS))
 width=$((1+SLURM_ARRAY_TASK_ID/NCONFS))
 conf=$((SLURM_ARRAY_TASK_ID%NCONFS))
 
-noise_id=$((conf / NOISE))
-noise=${noise[noise_id]}
-seed=$((conf % NOISE))
+noise_id=$((conf % NOISE))
+noise=${noise[$noise_id]}
+seed=$((conf / NOISE))
 
 echo "Model width: $width"
 echo "Seed: $seed"
