@@ -163,12 +163,12 @@ def aggregate_data(destdir=plots_path):
     nmetrics = len(figure1_conf["performance_metrics"])
     performance_data = {}
     for algorithm in figure1_conf["algorithms"]:
-        plot_data[algorithm] = {}
+        performance_data[algorithm] = {}
         epoch = figure1_conf["epochs"]["linear"]
         for dataset in figure1_conf["datasets"]:
-            plot_data[algorithm][dataset] = {}
+            performance_data[algorithm][dataset] = {}
             for base_model in figure1_conf["base_models"]:
-                plot_data[algorithm][dataset][base_model] = np.zeros((nnoise, nwidths, nmetrics, nseeds))
+                performance_data[algorithm][dataset][base_model] = np.zeros((nnoise, nwidths, nmetrics, nseeds))
                 for n_id, noise in enumerate(figure1_conf["noise_configs"]):
                     for w_id, width in enumerate(figure1_conf["widths"]):
                         for s_id in range(nseeds):
@@ -182,14 +182,14 @@ def aggregate_data(destdir=plots_path):
                                 for m_id, metric in enumerate(figure1_conf["performance_metrics"]):
                                     if noise == 0 and metric in ["train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored"]: continue
                                     logger.info(f"Parsing {base_model}_{width} epoch {epoch} {metric} seed {s_id}")
-                                    plot_data[algorithm][dataset][base_model][n_id, w_id, m_id, s_id] = parse_stats(fname, stats, metric, epoch)
+                                    performance_data[algorithm][dataset][base_model][n_id, w_id, m_id, s_id] = parse_stats(fname, stats, metric, epoch)
                                 
                             except FileNotFoundError:
                                 logger.info(f"File not found: {fname}")
                                 missing_runs.append(fname)
                             
-                plot_data[algorithm][dataset][base_model] = \
-                    plot_data[algorithm][dataset][base_model].tolist()
+                performance_data[algorithm][dataset][base_model] = \
+                    performance_data[algorithm][dataset][base_model].tolist()
     
     figure1_data.pop("performance_filenames")
     figure1_data["performance_data"] = performance_data
