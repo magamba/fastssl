@@ -3,19 +3,24 @@
 #SBATCH -A berzelius-2023-229
 #SBATCH --gpus=1
 #SBATCH -t 6:00:00
-#SBATCH -C fat
+#SBATCH -C thin
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /proj/memorization/logs/%A_%a.out
 #SBATCH --error /proj/memorization/logs/%A_%a.err
-#SBATCH --array=0-191%64
+#SBATCH --array=33-35
+####SBATCH --array 39-41,69-71
+####SBATCH --array=0-191%64
 
 NAME="ssl_barlow_twins"
 
 # load env
 source scripts/setup_env
 
-export SLURM_TMPDIR="/scratch/local"
+export SLURM_TMPDIR="/scratch/local/${SLURM_ARRAY_JOB_ID}/${SLURM_ARRAY_TASK_ID}"
+if [ ! -d "$SLURM_TMPDIR" ]; then
+    mkdir -p "$SLURM_TMPDIR"
+fi
 
 WANDB__SERVICE_WAIT=300
 
@@ -24,14 +29,14 @@ dataset='stl10'
 if [ $dataset = 'stl10' ]
 then
     batch_size=256
-    jac_batch_size=4
-    proj_str="stl10-"
+    jac_batch_size=8
+    proj_str="bt-stl10x-"
     ckpt_str="-stl10"
 else
     batch_size=512
-    jac_batch_size=4
-    proj_str=""
-    ckpt_str=""
+    jac_batch_size=2
+    proj_str="bt-cifar10-"
+    ckpt_str="-cifar10"
 fi
 
 SEEDS=3
@@ -62,6 +67,7 @@ fi
 trainset="${DATA_DIR}"/$dataset
 testset="${DATA_DIR}"/$dataset
 
+
 # Let's train a SSL (BarlowTwins) model with the above hyperparams
 python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.yaml \
                     --training.lambd=$lambd --training.projector_dim=$pdim \
@@ -80,6 +86,19 @@ python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.ya
                     --logging.wandb_project=$wandb_projname
 
 status=$?
+
+# let's save the model checkpoints to persistent storage
+destdir=$checkpt_dir/resnet18/width${width}/2_augs/lambd_"$lambd"000_pdim_"$pdim"_lr_0.001_wd_1e-05/2_augs_train
+if [ ! -d $destdir ]; then
+    mkdir -p $destdir
+fi
+cp -v "$SLURM_TMPDIR/exp_ssl_100.pth" "$destdir/exp_ssl_100_seed_"$seed".pt"
+
+new_status=$?
+status=$((status|new_status))
+
+echo "Done with training. Please run eval separately."
+exit $status
 
 model=resnet18feat_width${width}
 

@@ -8,29 +8,33 @@
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /proj/memorization/logs/%A_%a.out
 #SBATCH --error /proj/memorization/logs/%A_%a.err
-#SBATCH --array=0-191%64
+#SBATCH --array=171-173,177-191
+#####SBATCH --array=0-191%64
 
 NAME="ssl_byol"
 
 # load env
 source scripts/setup_env
 
-export SLURM_TMPDIR="/scratch/local"
+export SLURM_TMPDIR="/scratch/local/${SLURM_ARRAY_JOB_ID}/${SLURM_ARRAY_TASK_ID}"
+if [ ! -d "$SLURM_TMPDIR" ]; then
+    mkdir -p "$SLURM_TMPDIR"
+fi
 
 WANDB__SERVICE_WAIT=300
 
-#dataset='stl10'
-dataset='cifar10'
+dataset='stl10'
+#dataset='cifar10'
 if [ $dataset = 'stl10' ]
 then
     batch_size=256
     jac_batch_size=4
-    proj_str="stl10-"
+    proj_str="byol-stl10x-"
     ckpt_str="-stl10"
 else
     batch_size=512
     jac_batch_size=4
-    proj_str="byol-cifar10-"
+    proj_str="byol-cifar10x-"
     ckpt_str="-cifar10"
 fi
 
@@ -62,6 +66,7 @@ fi
 trainset="${DATA_DIR}"/$dataset
 testset="${DATA_DIR}"/$dataset
 
+#                    --training.use_autocast=True \
 # Let's train a SSL (BarlowTwins) model with the above hyperparams
 python scripts/train_model_widthVary.py --config-file configs/cc_byol.yaml \
                     --training.momentum_tau=$momentum_tau --training.projector_dim=$pdim \
@@ -79,7 +84,18 @@ python scripts/train_model_widthVary.py --config-file configs/cc_byol.yaml \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
 
-status=$?
+# let's save the model checkpoints to persistent storage
+destdir=$checkpt_dir/resnet18/width${width}/2_augs/lambd_0.007812_pdim_32_lr_0.001_wd_1e-06/2_augs_train
+if [ ! -d $destdir ]; then
+    mkdir -p $destdir
+fi
+cp -v "$SLURM_TMPDIR/exp_ssl_100.pth" "$destdir/exp_ssl_300_seed_"$seed".pt"
+
+new_status=$?
+status=$((status|new_status))
+
+echo "Done with training. Please run eval separately."
+exit $status
 
 model=resnet18feat_width${width}
 

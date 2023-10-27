@@ -3,14 +3,18 @@
 #SBATCH -A berzelius-2023-229
 #SBATCH --gpus=1
 #SBATCH -t 6:00:00
-#SBATCH -C fat
+#SBATCH -C thin
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /proj/memorization/logs/%A_%a.out
 #SBATCH --error /proj/memorization/logs/%A_%a.err
-#SBATCH --array 1539-1565,1593-1727
+#SBATCH --array 675-701,729-863
 #####was SBATCH --array=171-173,177-191
-#####SBATCH --array=0-1727%64
+#####SBATCH --array=0-863%64
+
+#### WARNING!!!
+#### The array size covers for widths 33-64
+#### for widths 1-32, please edit the line where width is set, down below
 
 NAME="ssl_byol"
 
@@ -56,7 +60,7 @@ NOISE=${#label_noise[@]}
 SEEDS=3
 NCONFS=$((NOISE * SEEDS))
 
-width=$((1+SLURM_ARRAY_TASK_ID/NCONFS))
+width=$((1+SLURM_ARRAY_TASK_ID/NCONFS +32))
 conf=$((SLURM_ARRAY_TASK_ID%NCONFS))
 
 noise_id=$((conf % NOISE))
