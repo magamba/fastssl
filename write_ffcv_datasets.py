@@ -16,6 +16,7 @@ from ffcv.transforms.common import Squeeze
 
 write_dataset = True
 noise_level = 5
+subsample_classes = False # if enabled, generates a reduced version of the dataset, with only a few classes sampled
 
 dataset = 'cifar10'
 #if dataset=='cifar10':
@@ -28,6 +29,9 @@ dataset = 'cifar10'
 #	dataset_folder = '/network/datasets/stl10.var/stl10_torchvision/'
 #	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/stl10'
 
+classes_to_keep = ['automobile', 'dog', 'ship']
+samples_per_class = 1500
+
 try:
 	dataset_folder = os.environ.get("DATA_DIR")
 	ffcv_folder = dataset_folder
@@ -35,8 +39,14 @@ except KeyError:
 	print("Please run scripts/setup_env first")
 	sys.exit(1)
 
+folder_name = str(dataset)
+if subsample_classes:
+    folder_name += "-subsampled"
 if noise_level>0:
-	ffcv_folder = os.path.join(ffcv_folder, "{}-Noise_{}".format(dataset, int(noise_level)))
+    folder_name += "-Noise_{}".format(int(noise_level))
+
+if subsample_classes or noise_level > 0:
+    ffcv_folder = os.path.join(ffcv_folder, folder_name)
 
 def with_indices(datasetclass):
     """ Wraps a DataSet class, so that it returns (data, target, index, ground_truth).
@@ -53,6 +63,36 @@ def with_indices(datasetclass):
     return type(datasetclass.__name__, (datasetclass,), {
         '__getitem__': __getitem__,
     })
+
+def subsample_dataset(dataset, classes_to_keep, samples_per_class, train=False):
+    """ Subsample classes from dataset and return a modified dataset (in-place)
+    """
+    class_idx = { c: dataset.class_to_idx[c] for c in classes_to_keep }
+    targets = dataset.targets
+    
+    # select samples to keep according to classes_to_keep and samples_per_class
+    mask_per_class = [ targets == class_idx[c] for c in class_idx ]
+    samples_mask = np.zeros_like(mask_per_class[0])
+    for i, mask in enumerate(mask_per_class):
+        if train:
+            mask[mask][samples_per_class:] = False
+        mask_per_class[i] = mask
+        samples_mask = np.logical_or(samples_mask, mask)
+  
+    sample_idx = np.where(samples_mask)[0]
+    
+    targets = targets[sample_idx]  
+    dataset.data = dataset.data[sample_idx]
+    dataset.classes = classes_to_keep
+    
+    for cid, c in enumerate(class_idx):
+        targets[targets == class_idx[c]] = cid
+        class_to_idx[c] = cid
+    
+    dataset.targets = targets
+    dataset.class_to_idx = class_to_idx
+    
+    return dataset  
 
 def add_label_noise(targets,noise_percentage=0.1,seed=1234):
 	from numpy.random import default_rng
@@ -93,6 +133,7 @@ def add_label_noise(targets,noise_percentage=0.1,seed=1234):
 if write_dataset:
 	if dataset=='cifar10':
 		CIFAR10 = torchvision.datasets.CIFAR10
+		
 		if noise_level > 0:
 			CIFAR10 = with_indices(
 				CIFAR10
@@ -100,6 +141,7 @@ if write_dataset:
 	
 		trainset = CIFAR10(
 		    root=dataset_folder, train=True, download=False, transform=None)
+		    
 		testset = torchvision.datasets.CIFAR10(
 		    root=dataset_folder, train=False, download=False, transform=None)
 
@@ -134,6 +176,9 @@ if write_dataset:
 
 	for name,ds in datasets.items():
 		#breakpoint()
+		if dataset == "cifar10" and subsample_classes:
+		    ds = subsample_dataset(ds, classes_to_keep, samples_per_class, train= name == "train")
+		
 		if name == 'train' and noise_level>0:
 			try:
 				targets = ds.targets
@@ -196,6 +241,9 @@ if dataset=='cifar10':
 	    root=dataset_folder, train=True, download=False, transform=transform_test)
 	testset = torchvision.datasets.CIFAR10(
 	    root=dataset_folder, train=False, download=False, transform=transform_test)
+	if subsample_classes:
+	    trainset = subsample_dataset(trainset, classes_to_keep, samples_per_class, train=True)
+		testset = subsample_dataset(testset, classes_to_keep, samples_per_class)
 elif dataset=='cifar100':
 	dataset_cls = torchvision.datasets.CIFAR100
 	if noise_level > 0:

@@ -104,6 +104,7 @@ Section("eval", "Fast CIFAR-10 evaluation").params(
     num_augmentations_pretrain=Param(
         int, "Number of augmentations used for pretraining", default=2
     ),
+    subsample_classes=Param(int, "Use subsampled version of a dataset, where the number of classes is reduced", default=False)
 )
 
 Section("logging", "Fast CIFAR-10 logging options").params(
@@ -329,6 +330,14 @@ def build_model(args=None):
                 feat_dim = 32*base_width
             else:
                 feat_dim = 2048
+        
+        if eval.subsample_classes:
+            num_classes = 3
+        elif training.dataset in ["cifar10", "stl10"]:
+            num_classes = 10
+        else:
+            num_classes = 100
+        
         model_args = {
             "bkey": model_type,
             "ckpt_path": ckpt_path,
@@ -338,7 +347,7 @@ def build_model(args=None):
             "proj_hidden_dim": training.hidden_dim
             if eval.train_algorithm in ("byol")
             else training.projector_dim,
-            "num_classes": 10 if training.dataset in ["cifar10", "stl10"] else 100,
+            "num_classes": num_classes,
         }
         model_cls = linear.LinearClassifier
 
