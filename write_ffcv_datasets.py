@@ -15,8 +15,8 @@ from ffcv.transforms import RandomHorizontalFlip, Cutout, \
 from ffcv.transforms.common import Squeeze
 
 write_dataset = True
-noise_level = 5
-subsample_classes = False # if enabled, generates a reduced version of the dataset, with only a few classes sampled
+noise_level = 0
+subsample_classes = True # if enabled, generates a reduced version of the dataset, with only a few classes sampled
 
 dataset = 'cifar10'
 #if dataset=='cifar10':
@@ -68,14 +68,17 @@ def subsample_dataset(dataset, classes_to_keep, samples_per_class, train=False):
     """ Subsample classes from dataset and return a modified dataset (in-place)
     """
     class_idx = { c: dataset.class_to_idx[c] for c in classes_to_keep }
-    targets = dataset.targets
+    targets = np.asarray(dataset.targets)
     
     # select samples to keep according to classes_to_keep and samples_per_class
     mask_per_class = [ targets == class_idx[c] for c in class_idx ]
     samples_mask = np.zeros_like(mask_per_class[0])
     for i, mask in enumerate(mask_per_class):
         if train:
-            mask[mask][samples_per_class:] = False
+            len(mask)
+            np.where(mask)
+            cut_idx = np.where(mask)[0][samples_per_class]
+            mask[cut_idx:] = False
         mask_per_class[i] = mask
         samples_mask = np.logical_or(samples_mask, mask)
   
@@ -87,12 +90,12 @@ def subsample_dataset(dataset, classes_to_keep, samples_per_class, train=False):
     
     for cid, c in enumerate(class_idx):
         targets[targets == class_idx[c]] = cid
-        class_to_idx[c] = cid
+        class_idx[c] = cid
     
     dataset.targets = targets
-    dataset.class_to_idx = class_to_idx
+    dataset.class_to_idx = class_idx
     
-    return dataset  
+    return dataset
 
 def add_label_noise(targets,noise_percentage=0.1,seed=1234):
 	from numpy.random import default_rng
@@ -169,7 +172,7 @@ if write_dataset:
 		testset = torchvision.datasets.STL10(
 		    root=dataset_folder, split='test', download=False, transform=None)
 
-	dataset_str = f"{dataset}_" if noise_level == 0 else ""
+	dataset_str = f"{dataset}_" if noise_level == 0 and not subsample_classes else ""
 	train_beton_fpath = os.path.join(ffcv_folder, dataset_str + "train.beton")
 	test_beton_fpath = os.path.join(ffcv_folder, dataset_str + "test.beton")
 	datasets = {'train': trainset, 'test':testset}
@@ -209,7 +212,7 @@ if write_dataset:
 		writer.from_indexed_dataset(ds)
 
 ## VERIFY the WRITTEN DATASET
-BATCH_SIZE = 5000
+BATCH_SIZE = 500
 loaders = {}
 for name in ['train','test']:
 	label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), Squeeze()]	# ToDevice('cuda:0'),
@@ -242,8 +245,8 @@ if dataset=='cifar10':
 	testset = torchvision.datasets.CIFAR10(
 	    root=dataset_folder, train=False, download=False, transform=transform_test)
 	if subsample_classes:
-	    trainset = subsample_dataset(trainset, classes_to_keep, samples_per_class, train=True)
-		testset = subsample_dataset(testset, classes_to_keep, samples_per_class)
+            trainset = subsample_dataset(trainset, classes_to_keep, samples_per_class, train=True)
+            testset = subsample_dataset(testset, classes_to_keep, samples_per_class)
 elif dataset=='cifar100':
 	dataset_cls = torchvision.datasets.CIFAR100
 	if noise_level > 0:
