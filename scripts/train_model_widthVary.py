@@ -104,7 +104,7 @@ Section("eval", "Fast CIFAR-10 evaluation").params(
     num_augmentations_pretrain=Param(
         int, "Number of augmentations used for pretraining", default=2
     ),
-    subsample_classes=Param(int, "Use subsampled version of a dataset, where the number of classes is reduced", default=False)
+    subsample_classes=Param(bool, "Use subsampled version of a dataset, where the number of classes is reduced", default=False)
 )
 
 Section("logging", "Fast CIFAR-10 logging options").params(
