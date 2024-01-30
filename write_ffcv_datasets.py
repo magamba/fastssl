@@ -29,19 +29,17 @@ dataset = 'cifar10'
 #	dataset_folder = '/network/datasets/stl10.var/stl10_torchvision/'
 #	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/stl10'
 
-classes_to_keep = ['automobile', 'dog', 'ship']
-samples_per_class = 1500
+classes_to_keep = ['automobile', 'dog'] #, 'ship']
+samples_per_class = 0 # 1500
 
-try:
-	dataset_folder = os.environ.get("DATA_DIR")
-	ffcv_folder = dataset_folder
-except KeyError:
-	print("Please run scripts/setup_env first")
-	sys.exit(1)
+dataset_folder = os.environ.get("DATA_DIR")
+if dataset_folder is None:
+    raise RuntimeError("Please run scripts/setup_env first")
+ffcv_folder = dataset_folder
 
 folder_name = str(dataset)
 if subsample_classes:
-    folder_name += "-subsampled"
+    folder_name += "-subsampled_2"
 if noise_level>0:
     folder_name += "-Noise_{}".format(int(noise_level))
 
@@ -74,9 +72,7 @@ def subsample_dataset(dataset, classes_to_keep, samples_per_class, train=False):
     mask_per_class = [ targets == class_idx[c] for c in class_idx ]
     samples_mask = np.zeros_like(mask_per_class[0])
     for i, mask in enumerate(mask_per_class):
-        if train:
-            len(mask)
-            np.where(mask)
+        if train and samples_per_class > 0:
             cut_idx = np.where(mask)[0][samples_per_class]
             mask[cut_idx:] = False
         mask_per_class[i] = mask
