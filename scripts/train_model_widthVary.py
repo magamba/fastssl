@@ -358,7 +358,7 @@ def build_model(args=None):
 
 def build_loss_fn(args=None):
     if args.algorithm in ("BarlowTwins", "ssl"):
-        return partial(bt.BarlowTwinLoss, _lambda=args.lambd)
+        return partial(bt.BarlowTwinLoss, _lambda=args.lambd, split=args.subsample_classes)
     elif args.algorithm == "byol":
         return byol.BYOLLoss
     elif args.algorithm == "SimCLR":
@@ -459,6 +459,7 @@ def train_step(
     """
 
     total_loss, total_num, num_batches = 0.0, 0, 0
+    total_loss_on_diag, total_loss_off_diag = 0., 0.
 
     ## setup dataloader + tqdm
     train_bar = tqdm(dataloader, desc="Train")
@@ -496,17 +497,27 @@ def train_step(
                     loss = loss_fn(model, inp)
                 else:
                     raise Exception("Algorithm not implemented")
+            
+            if args.subsample_classes and args.algorithm == "BarlowTwins":
+                loss, loss_on_diag, loss_off_diag = loss[0], loss[1], loss[2]
+                
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
         else:
             loss = loss_fn(model, inp)
+            if args.subsample_classes and args.algorithm == "BarlowTwins":
+                loss, loss_on_diag, loss_off_diag = loss[0], loss[1], loss[2]
             loss.backward()
             optimizer.step()
 
         ## update loss
         total_loss += loss.item()
         num_batches += 1
+        
+        if args.subsample_classes and args.algorithm == "BarlowTwins":
+            total_loss_on_diag += loss_on_diag.item()
+            total_loss_off_diag += loss_off_diag.item()
 
         if args.algorithm == "byol":
             byol.update_state_dict(target_model, model.state_dict(), args.momentum_tau)
@@ -515,13 +526,24 @@ def train_step(
         # if ray.tune.is_session_enabled():
         #     tune.report(epoch=epoch, loss=total_loss/num_batches)
         lr = optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0]
-        train_bar.set_description(
-            "Train Epoch: [{}/{}] Lr: {:.4f} Loss: {:.4f}".format(
-                epoch, args.epochs, lr, total_loss / num_batches
+        if args.subsample_classes and args.algorithm == "BarlowTwins":
+            train_bar.set_description(
+                "Train Epoch: [{}/{}] Lr: {:.4f} Loss: {:.4f} On diag: {:.4f} Off diag: {:.4f}".format(
+                    epoch, args.epochs, lr, total_loss / num_batches, total_loss_on_diag / num_batches, total_loss_off_diag / num_batches
+                )
             )
-        )
+        else:
+            train_bar.set_description(
+                "Train Epoch: [{}/{}] Lr: {:.4f} Loss: {:.4f}".format(
+                    epoch, args.epochs, lr, total_loss / num_batches
+                )
+            )
+
     if scheduler is not None:
         scheduler.step()
+    
+    if args.subsample_classes and args.algorithm == "BarlowTwins":
+        return (total_loss / num_batches, total_loss_on_diag / num_batches, total_loss_off_diag / num_batches)
     return total_loss / num_batches
 
 
@@ -694,6 +716,13 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             }
         )
 
+    if args.subsample_classes and args.algorithm != "linear":
+        results.update(
+            {"train_loss_on_diag": [],
+             "train_loss_off_diag": [],
+            }
+        )
+
     if args.algorithm == "linear":
         if args.use_autocast:
             with autocast():
@@ -834,8 +863,14 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             scheduler=scheduler,
             label_noise=label_noise,
         )
+        
+        if args.subsample_classes and args.algorithm != "linear":
+            train_loss, train_loss_on_diag, train_loss_off_diag = train_loss[0], train_loss[1], train_loss[2]
+            results["train_loss_on_diag"].append(train_loss_on_diag)
+            results["train_loss_off_diag"].append(train_loss_off_diag)
 
         results["train_loss"].append(train_loss)
+        
 
         if args.algorithm == "linear":
             acc_1, acc_5 = eval_step(
@@ -878,7 +913,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                     results["feature_input_jacobian_corr"].append((epoch, jacobian_corr))
             
         elif epoch % args.log_interval == 0:
-            if not eval_args.subsample_classes:
+            if not eval_args.subsample_classes or epoch == args.epochs:
                 ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch, suffix='pt')
                 state = dict(
                     epoch=epoch + 1,
@@ -934,7 +969,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 )
                 # print(results['alpha'])
 
-        results['base_width'] = int(str(args.model).split("_")[1].replace("width", ""))
+        results['base_width'] = float(str(args.model).split("_")[1].replace("width", ""))
         if use_wandb:
             if epoch == 1:
                 log_wandb(results, step=epoch, skip_keys=['eigenspectrum'])

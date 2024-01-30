@@ -17,7 +17,7 @@ def off_diagonal(x):
     return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
 
 
-def BarlowTwinLoss(model, inp, _lambda=None):
+def BarlowTwinLoss(model, inp, _lambda=None, split=False):
     """
     Peform model forward pass and compute the BarlowTwin loss.
 
@@ -25,6 +25,7 @@ def BarlowTwinLoss(model, inp, _lambda=None):
         model: a torch.nn.Module
         inp: a torch.Tensor
         _lambda: a float
+        split: bool If true return the two terms of the barlow twin loss separately
     Returns:
         loss: scalar tensor
     """
@@ -71,7 +72,10 @@ def BarlowTwinLoss(model, inp, _lambda=None):
         off_diag += off_diagonal(c).pow_(2).sum()
     # return average across all patches as the final loss
     loss = (on_diag + _lambda * off_diag) / num_augs
-    return loss
+    if split:
+        return loss, on_diag / num_augs, off_diag / num_augs
+    else:
+        return loss
 
 
 class BarlowTwins(SSL):
