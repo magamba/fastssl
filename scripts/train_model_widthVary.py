@@ -332,7 +332,7 @@ def build_model(args=None):
                 feat_dim = 2048
         
         if eval.subsample_classes:
-            num_classes = 3
+            num_classes = 2
         elif training.dataset in ["cifar10", "stl10"]:
             num_classes = 10
         else:
@@ -878,17 +878,18 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                     results["feature_input_jacobian_corr"].append((epoch, jacobian_corr))
             
         elif epoch % args.log_interval == 0:
-            ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch, suffix='pt')
-            state = dict(
-                epoch=epoch + 1,
-                model=model.state_dict(),
-                optimizer=optimizer.state_dict(),
-            )
-            if scheduler is not None:
-                state["scheduler"] = scheduler.state_dict()
-            torch.save(state, ckpt_path)
-            ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch)
-            torch.save(state, ckpt_path)
+            if not eval_args.subsample_classes:
+                ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch, suffix='pt')
+                state = dict(
+                    epoch=epoch + 1,
+                    model=model.state_dict(),
+                    optimizer=optimizer.state_dict(),
+                )
+                if scheduler is not None:
+                    state["scheduler"] = scheduler.state_dict()
+                torch.save(state, ckpt_path)
+                ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch)
+                torch.save(state, ckpt_path)
             if args.track_alpha:
                 # compute alpha at intermediate training steps
                 activations = powerlaw.generate_activations_prelayer_torch(
