@@ -95,6 +95,7 @@ Section("training", "Fast CIFAR-10 training").params(
     precache=Param(bool, "Precache outputs of network", default=False),
     adaptive_ssl=Param(bool, "Use alpha to regularize SSL loss", default=False),
     num_augmentations=Param(int, "Number of augmentations to use per image", default=2),
+    subsample_classes=Param(bool, "Use subsampled version of a dataset, where the number of classes is reduced", default=False)
 )
 
 Section("eval", "Fast CIFAR-10 evaluation").params(
