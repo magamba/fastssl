@@ -499,7 +499,7 @@ def train_step(
                 else:
                     raise Exception("Algorithm not implemented")
             
-            if args.subsample_classes and args.algorithm == "BarlowTwins":
+            if args.subsample_classes and args.algorithm == "ssl":
                 loss, loss_on_diag, loss_off_diag = loss[0], loss[1], loss[2]
                 
             scaler.scale(loss).backward()
@@ -507,7 +507,7 @@ def train_step(
             scaler.update()
         else:
             loss = loss_fn(model, inp)
-            if args.subsample_classes and args.algorithm == "BarlowTwins":
+            if args.subsample_classes and args.algorithm == "ssl":
                 loss, loss_on_diag, loss_off_diag = loss[0], loss[1], loss[2]
             loss.backward()
             optimizer.step()
@@ -516,7 +516,7 @@ def train_step(
         total_loss += loss.item()
         num_batches += 1
         
-        if args.subsample_classes and args.algorithm == "BarlowTwins":
+        if args.subsample_classes and args.algorithm == "ssl":
             total_loss_on_diag += loss_on_diag.item()
             total_loss_off_diag += loss_off_diag.item()
 
@@ -527,7 +527,7 @@ def train_step(
         # if ray.tune.is_session_enabled():
         #     tune.report(epoch=epoch, loss=total_loss/num_batches)
         lr = optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0]
-        if args.subsample_classes and args.algorithm == "BarlowTwins":
+        if args.subsample_classes and args.algorithm == "ssl":
             train_bar.set_description(
                 "Train Epoch: [{}/{}] Lr: {:.4f} Loss: {:.4f} On diag: {:.4f} Off diag: {:.4f}".format(
                     epoch, args.epochs, lr, total_loss / num_batches, total_loss_on_diag / num_batches, total_loss_off_diag / num_batches
@@ -543,7 +543,7 @@ def train_step(
     if scheduler is not None:
         scheduler.step()
     
-    if args.subsample_classes and args.algorithm == "BarlowTwins":
+    if args.subsample_classes and args.algorithm == "ssl":
         return (total_loss / num_batches, total_loss_on_diag / num_batches, total_loss_off_diag / num_batches)
     return total_loss / num_batches
 
