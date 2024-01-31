@@ -15,7 +15,10 @@ NAME="ssl_simclr"
 # load env
 source scripts/setup_env
 
-export SLURM_TMPDIR="/scratch/local"
+export SLURM_TMPDIR="/scratch/local/${SLURM_ARRAY_JOB_ID}/${SLURM_ARRAY_TASK_ID}"
+if [ ! -d "$SLURM_TMPDIR" ]; then
+    mkdir -p "$SLURM_TMPDIR"
+fi
 
 WANDB__SERVICE_WAIT=300
 
@@ -35,12 +38,13 @@ else
 fi
 
 SEEDS=3
+WIDTHS=64
 
 num_workers=16
 
-width=$((1+SLURM_ARRAY_TASK_ID/SEEDS))
-seed=$((SLURM_ARRAY_TASK_ID%SEEDS))
-temperature=0.5
+seed=$((SLURM_ARRAY_TASK_ID/WIDTHS))
+width=$((1+SLURM_ARRAY_TASK_ID%WIDTHS))
+temperature=0.1
 #pdim=2048
 pdim=$(($width * 32))
 
@@ -68,11 +72,12 @@ python scripts/train_model_widthVary.py --config-file configs/cc_SimCLR.yaml \
                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                     --training.batch_size=$batch_size --training.model=$model \
                     --training.seed=$seed \
-                    --training.epochs=400 \
+                    --training.epochs=100 \
+                    --training.lr=1e-3 \
                     --training.train_dataset=${trainset}_train.beton \
                     --training.val_dataset=${testset}_test.beton \
                     --training.num_workers=$num_workers \
-                    --training.log_interval=20 \
+                    --training.log_interval=10 \
                     --training.track_alpha=True \
                     --training.track_jacobian=True \
                     --training.jacobian_batch_size=$jac_batch_size \
@@ -81,6 +86,19 @@ python scripts/train_model_widthVary.py --config-file configs/cc_SimCLR.yaml \
                     --logging.wandb_project=$wandb_projname
 
 status=$?
+
+# let's save the model checkpoints to persistent storage
+destdir=$checkpt_dir/resnet18/width${width}/2_augs/temp_"$temperature"00_pdim_"$pdim"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train
+if [ ! -d $destdir ]; then
+    mkdir -p $destdir
+fi
+cp -v "$SLURM_TMPDIR/exp_ssl_100.pth" "$destdir/exp_ssl_100_seed_"$seed".pt"
+
+new_status=$?
+status=$((status|new_status))
+
+echo "Done with training. Please run eval separately."
+exit $status
 
 model=resnet18feat_width${width}
 
