@@ -34,7 +34,7 @@ else
     batch_size=512
     jac_batch_size=4
     proj_str="simclr-cifar10-"
-    ckpt_str=""
+    ckpt_str="-cifar10"
 fi
 
 SEEDS=3
@@ -88,7 +88,7 @@ python scripts/train_model_widthVary.py --config-file configs/cc_SimCLR.yaml \
 status=$?
 
 # let's save the model checkpoints to persistent storage
-destdir=$checkpt_dir/resnet18/width${width}/2_augs/temp_"$temperature"00_pdim_"$pdim"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train
+destdir=$checkpt_dir/resnet18/width$width/2_augs/temp_"$temperature"00_pdim_"$pdim"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train
 if [ ! -d $destdir ]; then
     mkdir -p $destdir
 fi

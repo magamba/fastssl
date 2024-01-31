@@ -34,7 +34,7 @@ else
     batch_size=512
     jac_batch_size=4
     proj_str="vicreg-cifar10-"
-    ckpt_str=""
+    ckpt_str="-cifar10"
 fi
 
 SEEDS=3
@@ -88,7 +88,7 @@ python scripts/train_model_widthVary.py --config-file configs/cc_VICReg.yaml \
 status=$?
 
 # let's save the model checkpoints to persistent storage
-destdir=$checkpt_dir/resnet18/width${width}/2_augs/lambd_"$lambd".000_mu_"$mu".000_pdim_"$pdim"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train
+destdir=$checkpt_dir/resnet18/width$width/2_augs/lambd_"$lambd".000_mu_"$mu".000_pdim_"$pdim"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train
 if [ ! -d $destdir ]; then
     mkdir -p $destdir
 fi
@@ -105,7 +105,7 @@ model=resnet18feat_width${width}
 # running eval for 0 label noise
 # Let's precache features, should take ~35 seconds (rtx8000)
 python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
-                    --training.temperature=$temperature --training.projector_dim=$pdim \
+                    --training.lambd=$lambd --training.mu=$mu --training.projector_dim=$pdim \
                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                     --training.batch_size=$batch_size --training.model=$model \
                     --training.seed=$seed \
@@ -119,7 +119,7 @@ status=$((status|new_status))
 
 # run linear eval on precached features from model: using default seed 42
 python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml \
-                    --training.temperature=$temperature --training.projector_dim=$pdim \
+                    --training.lambd=$lambd --training.mu=$mu --training.projector_dim=$pdim \
                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                     --training.batch_size=$batch_size --training.model=$model \
                     --training.seed=$seed \
@@ -158,7 +158,7 @@ for noise in 5 10 15 20 40 60 80 100; do
 
     # Let's precache features, should take ~35 seconds (rtx8000)
     python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
-                        --training.temperature=$temperature --training.projector_dim=$pdim \
+                        --training.lambd=$lambd --training.mu=$mu --training.projector_dim=$pdim \
                         --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                         --training.batch_size=$batch_size --training.model=$model \
                         --training.seed=$seed \
@@ -173,7 +173,7 @@ for noise in 5 10 15 20 40 60 80 100; do
 
     # run linear eval on precached features from model: using default seed 42
     python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml \
-                        --training.temperature=$temperature --training.projector_dim=$pdim \
+                        --training.lambd=$lambd --training.mu=$mu --training.projector_dim=$pdim \
                         --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                         --training.batch_size=$batch_size --training.model=$model \
                         --training.seed=$seed \
