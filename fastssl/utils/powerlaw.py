@@ -7,6 +7,16 @@ import torch
 
 from threadpoolctl import threadpool_limits
 
+def rankme(eigen):
+    """ Compute rankme score given a covariance eigenspectrum
+    """
+    l1 = np.sum(np.abs(eigen))
+    eps = 1e-7
+    scores = eigen / l1 + eps
+    entropy = - np.sum(scores * np.log(scores))
+    return np.exp(entropy)
+
+
 def fit_powerlaw(arr, start, end):
     x_range = np.arange(start, end + 1).astype(int)
     y_range = arr[x_range - 1]  # because the first eigenvalue is at index 0, so eigenval_{start} is at index (start-1)

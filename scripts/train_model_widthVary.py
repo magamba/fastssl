@@ -710,6 +710,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             "R2": [],
             "R2_100": [],
             "effective_rank": [],
+            "rankme": [],
             "feature_ambient_dim": [],
         }
     else:
@@ -760,8 +761,9 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                     alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
                         activations_eigen, trange=np.arange(tmin, tmax)
                     )
+                    rk = powerlaw.rankme(activations_eigen)
                 except:
-                    alpha, R2, R2_100 = np.nan, np.nan, np.nan
+                    alpha, R2, R2_100, rk = np.nan, np.nan, np.nan, np.nan
                 # debug_plot(activations_eigen,alpha,ypred,R2,R2_100,'test_full_early_{:.4f}.png'.format(args.lambd))
                 # save_path = gen_ckpt_path(args, args.algorithm, args.epochs, 'results_{}_full_early_alpha'.format(args.dataset), 'npy')
                 # np.save(save_path,dict(alpha=alpha,R2=R2,R2_100=R2_100))
@@ -774,6 +776,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
                 results["effective_rank"] = np.sum(activations_eigen) / np.max(np.abs(activations_eigen))
                 results["feature_ambient_dim"] = np.prod(activations.shape[1:])
+                results["rankme"] = rk
                 del activations
                 print("Initial alpha", results["alpha"])
         else:
@@ -844,6 +847,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
                     activations_eigen, trange=np.arange(tmin, tmax)
                 )
+                rk = powerlaw.rankme(activations_eigen)
                 results["eigenspectrum"].append((epoch - 1, activations_eigen))
                 results["alpha"].append((epoch - 1, alpha))
                 results["R2"].append((epoch - 1, R2))
@@ -854,6 +858,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 results["effective_rank"].append(
                     (epoch -1, np.sum(activations_eigen) / np.max(np.abs(activations_eigen)))
                 )
+                results["rankme"].append((epoch -1, rk))
                 del activations
                 print("Initial alpha", results["alpha"])
             
@@ -959,6 +964,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
                     activations_eigen, trange=np.arange(tmin, tmax)
                 )
+                rk = powerlaw.rankme(activations_eigen)
                 del activations
                 if args.adaptive_ssl:
                     alpha_gt = max(0, alpha - 1.2)  # check if alpha > 1.2
@@ -988,6 +994,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 results["effective_rank"].append(
                     (epoch, np.sum(activations_eigen) / np.max(np.abs(activations_eigen)))
                 )
+                results["rankme"].append((epoch, rk))
                 # print(results['alpha'])
 
         results['base_width'] = float(str(args.model).split("_")[1].replace("width", ""))
