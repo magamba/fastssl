@@ -30,7 +30,7 @@ def parse_stats(fname, stats, metric, epoch):
         missing_runs.append(fname)
         return 0
 
-    if metric not in figure1_conf["performance_metrics"]:
+    if metric not in figure1_conf["performance_metrics"] + ["train_loss"]:
         keys = [ i[0] for i in metric_vals ]
         vals = [ i[1] for i in metric_vals ]
         try:
@@ -64,7 +64,16 @@ def parse_stats(fname, stats, metric, epoch):
 figure1_conf = {
     "algorithms": ["barlow_twins", "byol"],
     "base_models": ["resnet18"],
-    "widths": list(range(1,65)),
+    "widths": {
+        "barlow_twins": {
+            "cifar10": list(range(1,65)),
+            "stl10": list(range(1,65)),
+        },
+        "byol" : {
+            "cifar10": list(range(1,65)),
+            "stl10": list(range(1,65)),
+        },
+    },
     "seeds" : [0, 1, 2],
     "epochs": {
         "barlow_twins": 100,
@@ -74,19 +83,19 @@ figure1_conf = {
     "noise_configs": [0, 5, 10, 15, 20, 40, 60, 80, 100],
     "datasets": ["cifar10", "stl10"],
     "performance_metrics": ["train_acc_1", "train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored", "test_acc_1"],
-    "metrics": ["alpha", "feature_input_jacobian", "effective_rank"],
+    "metrics": ["train_loss", "alpha", "feature_input_jacobian", "effective_rank"],
 }
 
 figure1_conf.update({
     "filenames": {
         "barlow_twins": {
             dataset: {
-                width: [ f"{root_dir}_barlow_twins-{dataset}/resnet18/width{width}/2_augs/lambd_0.005000_pdim_{32 * width}_lr_0.001_wd_1e-05/results_{dataset}_alpha_ssl_100_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]
+                width: [ f"{root_dir}_barlow_twins-{dataset}/resnet18/width{width}/2_augs/lambd_0.005000_pdim_{32 * width}_lr_0.001_wd_1e-05/results_{dataset}_alpha_ssl_100_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["barlow_twins"][dataset]
             } for dataset in figure1_conf["datasets"]
         },
         "byol": {
             dataset: {
-                width: [ f"{root_dir}_byol-{dataset}/resnet18/width{width}/2_augs/lambd_0.007812_pdim_{32 * width}_no_autocast_lr_0.001_wd_1e-06/results_{dataset}_alpha_ssl_300_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]
+                width: [ f"{root_dir}_byol-{dataset}/resnet18/width{width}/2_augs/lambd_0.007812_pdim_{32 * width}_no_autocast_lr_0.001_wd_1e-06/results_{dataset}_alpha_ssl_300_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["byol"][dataset]
             } for dataset in figure1_conf["datasets"]
         },
     },
@@ -97,20 +106,20 @@ figure1_conf.update({
         "barlow_twins": {
             dataset: {
                 0: {
-                    width: [ f"{root_dir}_barlow_twins-{dataset}/resnet18/width{width}/2_augs/lambd_0.005000_pdim_{32 * width}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]
+                    width: [ f"{root_dir}_barlow_twins-{dataset}/resnet18/width{width}/2_augs/lambd_0.005000_pdim_{32 * width}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["barlow_twins"][dataset]
                 },
                 **{noise: {
-                    width: [ f"{root_dir}_barlow_twins_noise{noise}-{dataset}/resnet18/width{width}/2_augs/lambd_0.005000_pdim_{32 * width}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]
+                    width: [ f"{root_dir}_barlow_twins_noise{noise}-{dataset}/resnet18/width{width}/2_augs/lambd_0.005000_pdim_{32 * width}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["barlow_twins"][dataset]
                 } for noise in figure1_conf["noise_configs"][1:]}
             } for dataset in figure1_conf["datasets"]
         },
         "byol": {
             dataset: {
                 0 : {
-                    width: [ f"{root_dir}_byol-{dataset}/resnet18/width{width}/2_augs/lambd_0.007812_pdim_{width * 32}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]
+                    width: [ f"{root_dir}_byol-{dataset}/resnet18/width{width}/2_augs/lambd_0.007812_pdim_{width * 32}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["byol"][dataset]
                 },
                 **{noise: {
-                    width: [ f"{root_dir}_byol_noise{noise}-{dataset}/resnet18/width{width}/2_augs/lambd_0.007812_pdim_{width * 32}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]
+                    width: [ f"{root_dir}_byol_noise{noise}-{dataset}/resnet18/width{width}/2_augs/lambd_0.007812_pdim_{width * 32}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["byol"][dataset]
                 } for noise in figure1_conf["noise_configs"][1:]}
             } for dataset in figure1_conf["datasets"]
         },
@@ -125,7 +134,6 @@ def aggregate_data(destdir=plots_path):
     """
     nseeds = len(figure1_conf["seeds"])
     nmetrics = len(figure1_conf["metrics"])
-    nwidths = len(figure1_conf["widths"])
     nnoise = len(figure1_conf["noise_configs"])
     figure1_data = figure1_conf
 
@@ -134,9 +142,10 @@ def aggregate_data(destdir=plots_path):
         plot_data[algorithm] = {}
         for dataset in figure1_conf["datasets"]:
             plot_data[algorithm][dataset] = {}
+            nwidths = len(figure1_conf["widths"][algorithm][dataset])
             for base_model in figure1_conf["base_models"]:
                 plot_data[algorithm][dataset][base_model] = np.zeros((nwidths, nmetrics, nseeds))
-                for w_id, width in enumerate(figure1_conf["widths"]):
+                for w_id, width in enumerate(figure1_conf["widths"][algorithm][dataset]):
                     for s_id in range(nseeds):
                         fname = figure1_conf["filenames"][algorithm][dataset][width][s_id]
                         logger.info(f"Loading {fname}")
@@ -167,10 +176,11 @@ def aggregate_data(destdir=plots_path):
         epoch = figure1_conf["epochs"]["linear"]
         for dataset in figure1_conf["datasets"]:
             performance_data[algorithm][dataset] = {}
+            nwidths = len(figure1_conf["widths"][algorithm][dataset])
             for base_model in figure1_conf["base_models"]:
                 performance_data[algorithm][dataset][base_model] = np.zeros((nnoise, nwidths, nmetrics, nseeds))
                 for n_id, noise in enumerate(figure1_conf["noise_configs"]):
-                    for w_id, width in enumerate(figure1_conf["widths"]):
+                    for w_id, width in enumerate(figure1_conf["widths"][algorithm][dataset]):
                         for s_id in range(nseeds):
                             fname = figure1_conf["performance_filenames"][algorithm][dataset][noise][width][s_id]
                             logger.info(f"Loading {fname}")
