@@ -118,7 +118,7 @@ figure1_conf.update({
         },
         "vicreg": {
             dataset: {
-                width: [ f"{root_dir}_vicreg-{dataset}/resnet18/width{width}/2_augs/lambd_25.000_mu_25.000_pdim_{32 * width}_bsz_512_lr_0.001_wd_1e-5/results_{dataset}_alpha_VICReg_100_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["vicreg"][dataset]
+                width: [ f"{root_dir}_vicreg-{dataset}/resnet18/width{width}/2_augs/lambd_25.000_mu_25.000_pdim_{32 * width}_bsz_512_lr_0.001_wd_1e-05/results_{dataset}_alpha_VICReg_100_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["vicreg"][dataset]
             } for dataset in figure1_conf["datasets"]
         },
     },
