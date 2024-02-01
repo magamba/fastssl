@@ -106,7 +106,10 @@ Section("eval", "Fast CIFAR-10 evaluation").params(
     num_augmentations_pretrain=Param(
         int, "Number of augmentations used for pretraining", default=2
     ),
-    subsample_classes=Param(bool, "Use subsampled version of a dataset, where the number of classes is reduced", default=False)
+    subsample_classes=Param(bool, "Use subsampled version of a dataset, where the number of classes is reduced", default=False),
+    track_epoch=Param(
+        int, "Append TRACK_EPOCH to the linear evaluation filename", default=-1
+    ),
 )
 
 Section("logging", "Fast CIFAR-10 logging options").params(
@@ -279,6 +282,9 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
             ckpt_dir = os.path.join(
                 ckpt_dir, "{}_augs_eval".format(args.num_augmentations)
             )
+            if eval_args.track_epoch >= 0:
+                ckpt_dir = "{}_epoch_{}".format(ckpt_dir, eval_args.track_epoch)
+
         # create ckpt file name
         ckpt_path = os.path.join(
             ckpt_dir,
@@ -747,13 +753,12 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
 
     if args.algorithm == "linear":
         if args.use_autocast:
-            with autocast():
-                activations = powerlaw.generate_activations_prelayer_torch(
-                    net=model,
-                    layer=model.fc,
-                    data_loader=loaders["train"],
-                    use_cuda=True,
-                )
+            activations = powerlaw.generate_activations_prelayer_torch(
+                net=model,
+                layer=model.fc,
+                data_loader=loaders["train"],
+                use_cuda=True,
+            )
             activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
             with autocast():
                 try:
