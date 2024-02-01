@@ -49,10 +49,10 @@ def parse_stats(fname, stats, metric, epoch):
 
     SSL pretraining: alpha, feature jacobian, effective rank
     
-    algorithms: barlow_twins, byol
+    algorithms: barlow_twins, byol, simclr, vicreg
     models: resnet18
     datasets: cifar10, stl10
-    epoch: 100 (barlow_twins), 300 (byol)
+    epoch: 100 (barlow_twins), 300 (byol), 100 (simclr), 100 (vicreg)
     
     train_configs: ssl, linear
     widths
@@ -62,7 +62,7 @@ def parse_stats(fname, stats, metric, epoch):
 """
 
 figure1_conf = {
-    "algorithms": ["barlow_twins", "byol"],
+    "algorithms": ["barlow_twins", "byol", "simclr", "vicreg"],
     "base_models": ["resnet18"],
     "widths": {
         "barlow_twins": {
@@ -73,11 +73,21 @@ figure1_conf = {
             "cifar10": list(range(1,65)),
             "stl10": list(range(1,65)),
         },
+        "simclr": {
+            "cifar10": list(range(1,65)),
+            "stl10": list(range(1,65)),
+        },
+        "vicreg" : {
+            "cifar10": list(range(1,65)),
+            "stl10": list(range(1,65)),
+        },
     },
     "seeds" : [0, 1, 2],
     "epochs": {
         "barlow_twins": 100,
         "byol": 300,
+        "simclr": 100,
+        "vicreg": 100,
         "linear": 200,
     },
     "noise_configs": [0, 5, 10, 15, 20, 40, 60, 80, 100],
@@ -96,6 +106,16 @@ figure1_conf.update({
         "byol": {
             dataset: {
                 width: [ f"{root_dir}_byol-{dataset}/resnet18/width{width}/2_augs/lambd_0.007812_pdim_{32 * width}_no_autocast_lr_0.001_wd_1e-06/results_{dataset}_alpha_ssl_300_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["byol"][dataset]
+            } for dataset in figure1_conf["datasets"]
+        },
+        "simclr": {
+            dataset: {
+                width: [ f"{root_dir}_simclr-{dataset}/resnet18/width{width}/2_augs/temp_0.100_pdim_{32 * width}_no_autocast_bsz_512_lr_0.001_wd_1e-05/results_{dataset}_alpha_SimCLR_100_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["simclr"][dataset]
+            } for dataset in figure1_conf["datasets"]
+        },
+        "vicreg": {
+            dataset: {
+                width: [ f"{root_dir}_simclr-{dataset}/resnet18/width{width}/2_augs/lambd_25.000_mu_25.000_pdim_{32 * width}_bsz_512_lr_0.001_wd_1e-5/results_{dataset}_alpha_VICReg_100_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["vicreg"][dataset]
             } for dataset in figure1_conf["datasets"]
         },
     },
@@ -122,6 +142,20 @@ figure1_conf.update({
                     width: [ f"{root_dir}_byol_noise{noise}-{dataset}/resnet18/width{width}/2_augs/lambd_0.007812_pdim_{width * 32}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["byol"][dataset]
                 } for noise in figure1_conf["noise_configs"][1:]}
             } for dataset in figure1_conf["datasets"]
+        },
+        "simclr": {
+            dataset: {
+                0 : {
+                    width: [ f"{root_dir}_simclr-{dataset}/resnet18/width{width}/2_augs/lambd_0.007812_pdim_{32 * width}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["simclr"][dataset]
+                },
+            },
+        },
+        "vicreg": {
+            dataset: {
+                0 : {
+                    width: [ f"{root_dir}_vicreg-{dataset}/resnet18/width{width}/2_augs/lambd_25.000000_pdim_{32 * width}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["vicreg"][dataset]
+                },
+            },
         },
     },
 })
