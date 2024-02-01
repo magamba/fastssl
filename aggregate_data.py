@@ -214,7 +214,7 @@ def aggregate_data(destdir=plots_path):
             for base_model in figure1_conf["base_models"]:
                 performance_data[algorithm][dataset][base_model] = np.zeros((nnoise, nwidths, nmetrics, nseeds))
                 for n_id, noise in enumerate(figure1_conf["noise_configs"]):
-                    if noise > 0 and base_model in ["simclr", "vicreg"]: continue
+                    if noise > 0 and algorithm in ["simclr", "vicreg"]: continue
                     for w_id, width in enumerate(figure1_conf["widths"][algorithm][dataset]):
                         for s_id in range(nseeds):
                             fname = figure1_conf["performance_filenames"][algorithm][dataset][noise][width][s_id]
