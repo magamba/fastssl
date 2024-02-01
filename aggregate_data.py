@@ -109,13 +109,15 @@ figure1_conf.update({
             } for dataset in figure1_conf["datasets"]
         },
         "simclr": {
-            dataset: {
-                width: [ f"{root_dir}_simclr-{dataset}/resnet18/width{width}/2_augs/temp_0.100_pdim_{32 * width}_no_autocast_bsz_512_lr_0.001_wd_1e-05/results_{dataset}_alpha_SimCLR_100_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["simclr"][dataset]
-            } for dataset in figure1_conf["datasets"]
+            "cifar10": {
+                width: [ f"{root_dir}_simclr-{dataset}/resnet18/width{width}/2_augs/temp_0.100_pdim_{32 * width}_no_autocast_bsz_512_lr_0.001_wd_1e-05/results_cifar10_alpha_SimCLR_100_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["simclr"][dataset]
+            },
+            "stl10": width: [ f"{root_dir}_simclr-{dataset}/resnet18/width{width}/2_augs/temp_0.100_pdim_{32 * width}_no_autocast_bsz_256_lr_0.001_wd_1e-05/results_stl10_alpha_SimCLR_100_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["simclr"][dataset]
+            },
         },
         "vicreg": {
             dataset: {
-                width: [ f"{root_dir}_simclr-{dataset}/resnet18/width{width}/2_augs/lambd_25.000_mu_25.000_pdim_{32 * width}_bsz_512_lr_0.001_wd_1e-5/results_{dataset}_alpha_VICReg_100_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["vicreg"][dataset]
+                width: [ f"{root_dir}_vicreg-{dataset}/resnet18/width{width}/2_augs/lambd_25.000_mu_25.000_pdim_{32 * width}_bsz_512_lr_0.001_wd_1e-5/results_{dataset}_alpha_VICReg_100_seed_{seed}.npy"  for seed in figure1_conf["seeds"] ] for width in figure1_conf["widths"]["vicreg"][dataset]
             } for dataset in figure1_conf["datasets"]
         },
     },
