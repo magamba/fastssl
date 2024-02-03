@@ -251,6 +251,18 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
                     args.weight_decay,
                 ),
             )
+        elif dir_algorithm in ["byol"]:
+            ckpt_dir = os.path.join(
+                main_dir,
+                "tau_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}".format(
+                    args.momentum_tau,
+                    args.projector_dim,
+                    "_no_autocast" if not args.use_autocast else "",
+                    args.batch_size,
+                    args.lr,
+                    args.weight_decay,
+                ),
+            )
         elif dir_algorithm in ["SimCLR"]:
             ckpt_dir = os.path.join(
                 main_dir,
