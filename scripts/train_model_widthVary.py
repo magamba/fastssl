@@ -110,6 +110,7 @@ Section("eval", "Fast CIFAR-10 evaluation").params(
     track_epoch=Param(
         int, "Append TRACK_EPOCH to the linear evaluation filename", default=-1
     ),
+    ssl_eval=Param(bool, "Evaluate SSL loss on the test set and exit", default=False),
 )
 
 Section("logging", "Fast CIFAR-10 logging options").params(
@@ -314,6 +315,10 @@ def build_model(args=None):
             "dataset": training.dataset,
             "projector_dim": training.projector_dim,
         }
+        
+        if eval.ssl_eval:
+            ckpt_path = gen_ckpt_path(training, eval, epoch=args.eval.epoch)
+            model_args["ckpt_path"] = ckpt_path
 
         if training.algorithm in ("byol"):
             model_args["hidden_dim"] = training.hidden_dim
@@ -607,6 +612,84 @@ def eval_step(model, dataloader, epoch=None, epochs=None):
             )
         )
     return acc_1, acc_5
+
+
+def ssl_eval_step(
+    model,
+    dataloader,
+    args,
+    loss_fn,
+    target_model=None,
+    epoch=None,
+):
+    """
+    Evaluate SSL loss on the test set
+
+    Args:
+        model :
+        target_model: Not None if BYOL
+        dataloader :
+        loss_fn:
+    """
+
+    total_loss, total_num, num_batches = 0.0, 0, 0
+    total_loss_on_diag, total_loss_off_diag = 0., 0.
+
+    ## setup dataloader + tqdm
+    train_bar = tqdm(dataloader, desc="SSL validation loss")
+
+    ## set model in eval mode
+    model.eval()
+
+    # for inp in dataloader:
+    for inp in train_bar:
+        if type(inp[0]) == type(inp[1]) and inp[0].shape == inp[1].shape:
+            # inp is a tuple with the two augmentations.
+            # This is legacy implementation of ffcv for dual augmentations
+            inp = ((inp[0], inp[1]), None)
+
+        ## forward
+        if scaler:
+            with autocast():
+                if args.algorithm == "byol":
+                    loss = loss_fn(model, target_model, inp)
+                elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear", "VICReg"):
+                    loss = loss_fn(model, inp)
+                else:
+                    raise Exception("Algorithm not implemented")
+            
+            if args.subsample_classes and args.algorithm == "ssl":
+                loss, loss_on_diag, loss_off_diag = loss[0], loss[1], loss[2]
+                
+        else:
+            loss = loss_fn(model, inp)
+            if args.subsample_classes and args.algorithm == "ssl":
+                loss, loss_on_diag, loss_off_diag = loss[0], loss[1], loss[2]
+
+        ## update loss
+        total_loss += loss.item()
+        num_batches += 1
+        
+        if args.subsample_classes and args.algorithm == "ssl":
+            total_loss_on_diag += loss_on_diag.item()
+            total_loss_off_diag += loss_off_diag.item()
+
+        if args.subsample_classes and args.algorithm == "ssl":
+            train_bar.set_description(
+                "SSL validation: [{}/{}] Loss: {:.4f} On diag: {:.4f} Off diag: {:.4f}".format(
+                    epoch, args.epochs, total_loss / num_batches, total_loss_on_diag / num_batches, total_loss_off_diag / num_batches
+                )
+            )
+        else:
+            train_bar.set_description(
+                "SSL validation: [{}/{}] Loss: {:.4f}".format(
+                    epoch, args.epochs, total_loss / num_batches
+                )
+            )
+
+    if args.subsample_classes and args.algorithm == "ssl":
+        return (total_loss / num_batches, total_loss_on_diag / num_batches, total_loss_off_diag / num_batches)
+    return total_loss / num_batches
 
 
 def debug_plot(activations_eigen, alpha, ypred, R2, R2_100, figname):
@@ -1141,6 +1224,45 @@ def run_experiment(args):
             eval,
             training.epochs,
             "results_{}_jacobian".format(training.dataset),
+            "npy",
+        )
+        np.save(save_path, results)
+    elif eval.ssl_eval:
+        print("Evaluating SSL loss using the test set")
+        results = {
+            "test_loss": [],
+            "test_loss_on_diag": [],
+            "test_loss_off_diag": [],
+        }
+        
+        loss_fn = build_loss_fn(training)
+        print("CONSTRUCTED LOSS FUNCTION")
+        
+        eval_loss = ssl_eval_step(
+            model=model,
+            dataloader=loaders["test"],
+            args=training,
+            loss_fn=loss_fn,
+            target_model=target_model if args.algorithm == "byol" else None,
+            epoch=training.epochs,
+        )
+        
+        if args.subsample_classes and args.algorithm != "linear":
+            train_loss, train_loss_on_diag, train_loss_off_diag = train_loss[0], train_loss[1], train_loss[2]
+            results["test_loss_on_diag"].append(train_loss_on_diag)
+            results["test_loss_off_diag"].append(train_loss_off_diag)
+
+        results["test_loss"].append(test_loss)
+        
+        
+        if use_wandb:
+            log_wandb(results, step=training.epochs)
+            
+        save_path = gen_ckpt_path(
+            training,
+            eval,
+            training.epochs,
+            "results_{}_ssl_eval".format(training.dataset),
             "npy",
         )
         np.save(save_path, results)
