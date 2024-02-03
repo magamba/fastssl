@@ -282,10 +282,10 @@ figure2_conf = {
     "datasets": ["cifar10", "stl10"],
     "performance_metrics": ["train_acc_1", "train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored", "test_acc_1"],
     "metrics": ["train_loss", "alpha", "feature_input_jacobian", "effective_rank", "rankme"],
-    "hyperparams": {
-        "barlow_twins": [0.000500, 0.001000, 0.005000, 0.010000],
-        "byol": [0.007812],
-        "vicreg": [5.000, 15.000, 25.000, 35.000]
+    "hparams": {
+        "barlow_twins": ["0.000500", "0.001000", "0.005000", "0.010000"],
+        "byol": ["0.007812"],
+        "vicreg": ["5.000", "15.000", "25.000", "35.000"]
     },
 }
 
@@ -294,7 +294,7 @@ figure2_conf.update({
     "filenames": {
         "barlow_twins": {
             dataset: {
-                hparam: [ f"{root_dir}_sweep_barlow_twins-{dataset}/resnet18/width64/2_augs/lambd_{hparam}_pdim_2048_lr_0.001_wd_1e-05/results_{dataset}_alpha_ssl_200_seed_{seed}.npy"  for seed in figure2_conf["seeds"] ] for hparam in figure2_conf["hyperparams"]["barlow_twins"]
+                hparam: [ f"{root_dir}_sweep_barlow_twins-{dataset}/resnet18/width64/2_augs/lambd_{hparam}_pdim_2048_lr_0.001_wd_1e-05/results_{dataset}_alpha_ssl_200_seed_{seed}.npy"  for seed in figure2_conf["seeds"] ] for hparam in figure2_conf["hparams"]["barlow_twins"]
             } for dataset in figure2_conf["datasets"]
         },
         "byol": {
@@ -304,10 +304,10 @@ figure2_conf.update({
         },
         "vicreg": {
             "cifar10": {
-                hparam: [ f"{root_dir}_sweep_vicreg-cifar10/resnet18/width64/2_augs/lambd_{hparam}_mu_25.000_pdim_2048_bsz_512_lr_0.001_wd_1e-05/results_cifar10_alpha_VICReg_200_seed_{seed}.npy"  for seed in figure2_conf["seeds"] ] for hparam in figure2_conf["hparams"]["vicreg"]
+                hparam: [ f"{root_dir}_sweep_VICReg-cifar10/resnet18/width64/2_augs/lambd_{hparam}_mu_25.000_pdim_2048_bsz_512_lr_0.001_wd_1e-05/results_cifar10_alpha_VICReg_200_seed_{seed}.npy"  for seed in figure2_conf["seeds"] ] for hparam in figure2_conf["hparams"]["vicreg"]
             },
             "stl10": {
-                hparam: [ f"{root_dir}_sweep_vicreg-stl10/resnet18/width64/2_augs/lambd_{hparam}_mu_25.000_pdim_2048_bsz_256_lr_0.001_wd_1e-05/results_stl10_alpha_VICReg_200_seed_{seed}.npy"  for seed in figure2_conf["seeds"] ] for hparam in figure2_conf["hparams"]["vicreg"]
+                hparam: [ f"{root_dir}_sweep_VICReg-stl10/resnet18/width64/2_augs/lambd_{hparam}_mu_25.000_pdim_2048_bsz_256_lr_0.001_wd_1e-05/results_stl10_alpha_VICReg_200_seed_{seed}.npy"  for seed in figure2_conf["seeds"] ] for hparam in figure2_conf["hparams"]["vicreg"]
             },
         },
     },
@@ -337,7 +337,7 @@ figure2_conf.update({
             dataset: {
                 40 : {
                     epoch: {
-                        hparam: [ f"{root_dir}_sweep_vicreg_noise40-{dataset}/resnet18/width64/2_augs/lambd_{hparam}_pdim_2048_lr_0.001_wd_1e-06/1_augs_eval_epoch_{epoch}/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure2_conf["seeds"] ] for hparam in figure2_conf["hparams"]["vicreg"]
+                        hparam: [ f"{root_dir}_sweep_VICReg_noise40-{dataset}/resnet18/width64/2_augs/lambd_{hparam}000_pdim_2048_lr_0.001_wd_1e-06/1_augs_eval_epoch_{epoch}/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure2_conf["seeds"] ] for hparam in figure2_conf["hparams"]["vicreg"]
                     } for epoch in figure2_conf["epochs"]
                 },
             } for dataset in figure2_conf["datasets"]
@@ -392,9 +392,10 @@ def aggregate_data(destdir=plots_path):
     for dataset in figure2_conf["datasets"]:
         performance_data[dataset] = {}
         for algorithm in figure2_conf["algorithms"]:
+            nconfigs = len(figure2_conf["hparams"][algorithm])
             performance_data[dataset][algorithm] = np.zeros((nmetrics, nconfigs, nepochs, nseeds))
             for e_id, epoch in enumerate(figure2_conf["epochs"]):
-                for h_id, hparam in figure2_conf["hparams"][algorithm]:
+                for h_id, hparam in enumerate(figure2_conf["hparams"][algorithm]):
                     for s_id in range(nseeds):
                         fname = figure2_conf["performance_filenames"][algorithm][dataset][noise][epoch][hparam][s_id]
                         logger.info(f"Loading {fname}")
@@ -479,7 +480,7 @@ def main():
     global logger
     logger = logging.getLogger()
 
-    for fig_id in [1, 2]:
+    for fig_id in [2]:
         aggregate_stats(fig_id)
 
 
