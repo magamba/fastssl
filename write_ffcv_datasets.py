@@ -16,12 +16,8 @@ from ffcv.transforms import (
     Convert,
     ToDevice,
     ToTensor,
-<<<<<<< HEAD
     ToTorchImage,
     RandomResizedCrop,
-=======
-    ToTorchImage
->>>>>>> 940e81e6f095dc6a352a1644016d8c9ee975dab5
 )
 from ffcv.transforms.common import Squeeze
 
@@ -29,21 +25,28 @@ from ffcv.transforms.common import Squeeze
 write_dataset = False
 upscale = False # upscale images to 224x224 resolution
 
-dataset = "stl10"
+dataset = "cifar10"
+#dataset = "stl10"
 
-if dataset == "cifar100":
-    dataset_folder = "/network/datasets/cifar100.var/cifar100_torchvision/"
-    ffcv_folder = "/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar100"
-elif dataset == "stl10":
-    dataset_folder = "/network/datasets/stl10.var/stl10_torchvision/"
-    # ffcv_folder = "/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/stl10"
-    ffcv_folder = "/network/scratch/g/ghosharn/ffcv/ffcv_datasets/stl10"
+#if dataset == "cifar100":
+#    dataset_folder = "/network/datasets/cifar100.var/cifar100_torchvision/"
+#    ffcv_folder = "/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar100"
+#elif dataset == "stl10":
+#    dataset_folder = "/network/datasets/stl10.var/stl10_torchvision/"
+#    # ffcv_folder = "/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/stl10"
+#    ffcv_folder = "/network/scratch/g/ghosharn/ffcv/ffcv_datasets/stl10"
+#
+#elif dataset == "cifar10":
+#    dataset_folder = "/network/datasets/cifar10.var/cifar10_torchvision/"
+#    # ffcv_folder = "/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar10"
+#    ffcv_folder = "/network/scratch/g/ghosharn/ffcv/ffcv_datasets/cifar10"
 
-elif dataset == "cifar10":
-    dataset_folder = "/network/datasets/cifar10.var/cifar10_torchvision/"
-    # ffcv_folder = "/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar10"
-    ffcv_folder = "/network/scratch/g/ghosharn/ffcv/ffcv_datasets/cifar10"
+dataset_folder = os.environ.get("DATA_DIR")
+if dataset_folder is None:
+    raise RuntimeError("Please run scripts/setup_env first")
+ffcv_folder = dataset_folder
 
+folder_name = str(dataset)
 
 if dataset == "cifar100":
     trainset = torchvision.datasets.CIFAR100(
@@ -72,8 +75,9 @@ elif dataset == "stl10":
         root=dataset_folder, split="test", download=False, transform=None
     )
 
-train_beton_fpath = os.path.join(ffcv_folder, "train.beton")
-test_beton_fpath = os.path.join(ffcv_folder, "test.beton")
+dataset_str = f"{dataset}_" if noise_level == 0 and not subsample_classes else ""
+train_beton_fpath = os.path.join(ffcv_folder, dataset_str + "train.beton")
+test_beton_fpath = os.path.join(ffcv_folder, dataset_str + "test.beton")
 
 ## WRITE TO BETON FILES
 if write_dataset:
