@@ -30,7 +30,7 @@ from torch import nn, optim
 
 from fastargs import Section, Param
 
-from fastssl.data import get_ssltrain_imagenet_pytorch_dataloaders_distributed, get_sseval_imagenet_ffcv_dataloaders
+from fastssl.data.imagenet_dataloaders import get_ssltrain_imagenet_pytorch_dataloaders_distributed, get_sseval_imagenet_ffcv_dataloaders
 import fastssl.models.barlow_twins as bt
 from fastssl.utils.base import set_seeds, get_args_from_config
 import fastssl.utils.powerlaw as powerlaw
@@ -75,7 +75,7 @@ Section('training', 'Fast distributed imagenet training').params(
     ckpt_dir=Param(
         str, 'ckpt-dir', default='/data/krishna/research/results/0319/001/checkpoints'),
     use_autocast=Param(
-        bool, 'autocast fp16', default=True),
+        bool, 'autocast fp16', default=False),
     track_jacobian=Param(bool, "Track input Jacobian of the last feature layer", default=False),
     jacobian_bigmem=Param(bool, "Use fast memory-expensive Jacobian computation algorithm, which explicitly instantiates the Jacobian tensor", default=False),
     jacobian_batch_size=Param(int, "Batch size to use for Jacobian computation.", default=128),
@@ -138,7 +138,7 @@ def build_model(args=None):
             'bkey': training.model,  # supports : resnet50feat, resnet50proj
             'ckpt_path': args.ckpt_dir + f'/checkpoint_ssl.pth',
             'dataset': training.dataset,
-            'feat_dim': args.projector_dim
+            'feat_dim': args.projector_dim,
             'num_classes': num_classes,
         }
         model_cls = bt.LinearClassifier
@@ -320,6 +320,7 @@ def main_worker(gpu, train_args, eval_args):
 
     torch.cuda.set_device(gpu)
     torch.backends.cudnn.benchmark = True
+    torch.autograd.set_detect_anomaly(True)
 
     set_seeds(training.seed)
     # build model from SSL library

@@ -1,0 +1,9 @@
+cfg:
+  dataset: 'imagenet'
+  split: 'train'
+  data_dir: '/proj/azizpour-group/datasets/imagenet'
+  write_path: '/proj/memorization/data/imagenet/train.beton' 
+  max_resolution: 224
+  num_workers: 8
+  chunk_size: 128
+  compress_probability: 0.
