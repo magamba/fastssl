@@ -466,6 +466,13 @@ def build_optimizer(model, args=None):
     scheduler = None
     if args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
         opt = Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        if "vit" in args.model:
+            warmup_epochs = 20
+            def warmup(current_step: int):
+                return 1 / (10**(float(warmup_epochs - current_step)))
+            warmup_scheduler = lr_scheduler.LambdaLR(opt, lr_lambda=warmup)
+            cosine_scheduler = lr_scheduler.CosineAnnealingLR(opt, args.epochs)
+            scheduler = lr_scheduler.SequentialLR(opt, [warmup_scheduler, cosine_scheduler], [warmup_epochs])
 #    elif args.algorithm == "linear":
 #        default_lr = 1e-3
 #        default_weight_decay = 1e-6
