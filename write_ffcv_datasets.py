@@ -7,7 +7,7 @@ from ffcv.writer import DatasetWriter
 from typing import List
 from ffcv.fields import IntField, RGBImageField
 from ffcv.loader import Loader, OrderOption
-from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder
+from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder, RandomResizedCropRGBImageDecoder
 from ffcv.pipeline.operation import Operation
 from ffcv.transforms import (
     RandomHorizontalFlip,
@@ -22,8 +22,8 @@ from ffcv.transforms import (
 from ffcv.transforms.common import Squeeze
 
 
-write_dataset = False
-upscale = False # upscale images to 224x224 resolution
+write_dataset = True
+upscale = True # upscale images to 224x224 resolution
 
 dataset = "cifar10"
 #dataset = "stl10"
@@ -47,6 +47,8 @@ if dataset_folder is None:
 ffcv_folder = dataset_folder
 
 folder_name = str(dataset)
+if upscale:
+    folder_name += "-upscaled"
 
 if dataset == "cifar100":
     trainset = torchvision.datasets.CIFAR100(
@@ -75,15 +77,15 @@ elif dataset == "stl10":
         root=dataset_folder, split="test", download=False, transform=None
     )
 
-dataset_str = f"{dataset}_" if noise_level == 0 and not subsample_classes else ""
-train_beton_fpath = os.path.join(ffcv_folder, dataset_str + "train.beton")
-test_beton_fpath = os.path.join(ffcv_folder, dataset_str + "test.beton")
+ffcv_folder = os.path.join(ffcv_folder, folder_name)
+train_beton_fpath = os.path.join(ffcv_folder, "train.beton")
+test_beton_fpath = os.path.join(ffcv_folder, "test.beton")
 
 ## WRITE TO BETON FILES
 if write_dataset:
     datasets = {"train": trainset, "test": testset}
     for name, ds in datasets.items():
-        breakpoint()
+        #breakpoint()
         path = train_beton_fpath if name == "train" else test_beton_fpath
         writer = DatasetWriter(path, {"image": RGBImageField(), "label": IntField()})
         writer.from_indexed_dataset(ds)
@@ -91,7 +93,7 @@ if write_dataset:
         datasets = {"unlabeled": unlabeledset}
         unlabeled_beton_fpath = os.path.join(ffcv_folder, "unlabeled.beton")
         for name, ds in datasets.items():
-            breakpoint()
+            #breakpoint()
             path = unlabeled_beton_fpath
             writer = DatasetWriter(path, {"image": RGBImageField(), "label": IntField()})
             writer.from_indexed_dataset(ds)
@@ -110,8 +112,8 @@ for name in ["train", "test"]:
         image_pipeline: List[Operation] = [
             RandomResizedCropRGBImageDecoder(
                 output_size=(224, 224),
-                scale=(0.08, 1.0),
-                ratio=(0.4, 0.1),
+                scale=(1.0, 1.0),
+                ratio=(1.0, 1.0),
             )
         ]
     else:
@@ -137,9 +139,9 @@ for name in ["train", "test"]:
         pipelines={"image": image_pipeline, "label": label_pipeline},
     )
 
-transform_test = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-if upscale:
-    transform_test.insert(0, torchvision.transforms.Resize(224, 224))
+transform_list = [torchvision.transforms.Resize((224, 224))] if upscale else []
+transform_list.append(torchvision.transforms.ToTensor())
+transform_test = torchvision.transforms.Compose(transform_list)
 
 if dataset == "cifar100":
     trainset = torchvision.datasets.CIFAR100(
@@ -178,7 +180,7 @@ print("FFCV stats:", X_ffcv.shape, X_ffcv.mean(), X_ffcv.min(), X_ffcv.max())
 print("torch stats:", X_tv.shape, X_tv.mean(), X_tv.min(), X_tv.max())
 print(torch.allclose(X_ffcv / 255.0, X_tv))
 
-breakpoint()
+#breakpoint()
 
 # calculate mean and std of dataset
 print("ffcv dataset stats...")
