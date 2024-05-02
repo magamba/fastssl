@@ -328,10 +328,6 @@ def build_model(args=None):
             "projector_dim": training.projector_dim,
         }
         
-        if eval.ssl_eval:
-            ckpt_path = gen_ckpt_path(training, eval, epoch=args.eval.epoch)
-            model_args["ckpt_path"] = ckpt_path
-
         if training.algorithm in ("byol"):
             model_args["hidden_dim"] = training.hidden_dim
             model_cls = byol.BYOL
@@ -394,6 +390,11 @@ def build_model(args=None):
         model_cls = linear.LinearClassifier
 
     model = model_cls(**model_args)
+    if eval.ssl_eval:
+        ckpt_path = gen_ckpt_path(training, eval, epoch=args.training.epochs)
+        model.load_state_dict(
+            torch.load(ckpt_path, map_location="cpu")["model"]
+        )
     model = model.to(memory_format=torch.channels_last).cuda()
     return model
 
@@ -661,7 +662,7 @@ def ssl_eval_step(
             inp = ((inp[0], inp[1]), None)
 
         ## forward
-        if scaler:
+        if args.use_autocast:
             with autocast():
                 if args.algorithm == "byol":
                     loss = loss_fn(model, target_model, inp)
@@ -674,7 +675,13 @@ def ssl_eval_step(
                 loss, loss_on_diag, loss_off_diag = loss[0], loss[1], loss[2]
                 
         else:
-            loss = loss_fn(model, inp)
+            if args.algorithm == "byol":
+                loss = loss_fn(model, target_model, inp)
+            elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear", "VICReg"):
+                loss = loss_fn(model, inp)
+            else:
+                raise Exception("Algorithm not implemented")
+            
             if args.subsample_classes and args.algorithm == "ssl":
                 loss, loss_on_diag, loss_off_diag = loss[0], loss[1], loss[2]
 
@@ -1252,22 +1259,22 @@ def run_experiment(args):
         
         eval_loss = ssl_eval_step(
             model=model,
-            dataloader=loaders["test"],
+            dataloader=loaders["train"],
             args=training,
             loss_fn=loss_fn,
-            target_model=target_model if args.algorithm == "byol" else None,
+            target_model=target_model if training.algorithm == "byol" else None,
             epoch=training.epochs,
         )
         
-        if args.subsample_classes and args.algorithm != "linear":
-            train_loss, train_loss_on_diag, train_loss_off_diag = train_loss[0], train_loss[1], train_loss[2]
-            results["test_loss_on_diag"].append(train_loss_on_diag)
-            results["test_loss_off_diag"].append(train_loss_off_diag)
+        if training.subsample_classes and training.algorithm != "linear":
+            eval_loss, eval_loss_on_diag, eval_loss_off_diag = eval_loss[0], eval_loss[1], eval_loss[2]
+            results["test_loss_on_diag"].append(eval_loss_on_diag)
+            results["test_loss_off_diag"].append(eval_loss_off_diag)
 
-        results["test_loss"].append(test_loss)
+        results["test_loss"].append(eval_loss)
         
         
-        if use_wandb:
+        if args.logging.use_wandb:
             log_wandb(results, step=training.epochs)
             
         save_path = gen_ckpt_path(
