@@ -17,6 +17,10 @@ from ffcv.transforms.common import Squeeze
 write_dataset = True
 noise_level = 0
 subsample_classes = True # if enabled, generates a reduced version of the dataset, with only a few classes sampled
+unseen_classes = True # if true, sample classes from a secondary list
+
+if unseen_classes:
+    assert subsample_classes, "Error: subsample_classes must be True when unseen_classes is True"
 
 dataset = 'cifar10'
 #if dataset=='cifar10':
@@ -29,7 +33,11 @@ dataset = 'cifar10'
 #	dataset_folder = '/network/datasets/stl10.var/stl10_torchvision/'
 #	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/stl10'
 
-classes_to_keep = ['automobile', 'dog'] #, 'ship']
+if unseen_classes:
+    classes_to_keep = ['ship', 'horse']
+else:
+    classes_to_keep = ['automobile', 'dog'] #, 'ship']
+
 samples_per_class = 0 # 1500
 
 dataset_folder = os.environ.get("DATA_DIR")
@@ -38,8 +46,11 @@ if dataset_folder is None:
 ffcv_folder = dataset_folder
 
 folder_name = str(dataset)
-if subsample_classes:
+if unseen_classes:
+    folder_name += "-unseen_2"
+elif subsample_classes:
     folder_name += "-subsampled_2"
+
 if noise_level>0:
     folder_name += "-Noise_{}".format(int(noise_level))
 
