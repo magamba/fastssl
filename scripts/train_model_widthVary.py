@@ -32,6 +32,7 @@ from torch.optim import Adam, SGD, lr_scheduler
 
 import torchvision
 from tqdm import tqdm
+import umap
 
 from fastargs import Section, Param
 
@@ -111,6 +112,7 @@ Section("eval", "Fast CIFAR-10 evaluation").params(
         int, "Append TRACK_EPOCH to the linear evaluation filename", default=-1
     ),
     ssl_eval=Param(bool, "Evaluate SSL loss on the test set and exit", default=False),
+    umap_vis=Param(bool, "Fit UMAP visualization to learned features", default=False),
 )
 
 Section("logging", "Fast CIFAR-10 logging options").params(
@@ -1203,6 +1205,21 @@ def run_experiment(args):
         # removing the final linear readout layer
         model._modules["fc"] = torch.nn.Identity()
         results = precache_outputs(model, loaders, training, eval)
+        
+        if eval.umap_vis:
+            for split in results.keys():
+                fit = umap.UMAP(
+                    n_neighbors=70,
+                    min_dist=0.5,
+                    n_components=2,
+                    metric='euclidean',
+                    random_state=42,
+                )
+                print(f"Fitting UMAP to {split} split")
+                u = fit.fit_transform(results[split]["activations"])
+        
+                results[split]["umap"] = u.tolist()
+                
         # now we save the results to npy file!
         save_path = gen_ckpt_path(
             training,
@@ -1211,6 +1228,7 @@ def run_experiment(args):
             "precache_{}_{}".format(training.dataset, training.model),
             "npy",
         )
+        print(f"Saving precached features to {save_path}")
         np.save(save_path, results)
     elif training.jacobian_only:
         print("Computing input Jacobian of SSL features, no training")
