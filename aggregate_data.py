@@ -30,7 +30,13 @@ def parse_stats(fname, stats, metric, epoch):
         missing_runs.append(fname)
         return 0
 
-    if metric not in figure1_conf["performance_metrics"] + ["train_loss"]:
+    if metric not in figure1_conf["performance_metrics"] + ["train_loss", "train_loss_on_diag", "train_loss_off_diag", "test_loss", "test_loss_on_diag", "test_loss_off_diag"]:
+        if metric == "rankme":
+            try:
+                val = metric_vals.item()
+                return val
+            except AttributeError:
+                pass
         keys = [ i[0] for i in metric_vals ]
         vals = [ i[1] for i in metric_vals ]
         try:
@@ -169,7 +175,7 @@ figure1_conf.update({
 
 
 missing_runs = []
-def aggregate_data(destdir=plots_path):
+def aggregate_fig1(destdir=plots_path):
     """ Aggregate results for figure 1
     """
     nseeds = len(figure1_conf["seeds"])
@@ -346,7 +352,7 @@ figure2_conf.update({
 })
 
 missing_runs = []
-def aggregate_data(destdir=plots_path):
+def aggregate_fig2(destdir=plots_path):
     """ Aggregate results for figure 2
     """
     nseeds = len(figure2_conf["seeds"])
@@ -455,8 +461,9 @@ figure3_conf = {
     "epochs": [10000,],
     "noise_configs": [0,],
     "datasets": ["cifar10",],
-    "metrics": ["train_loss", "train_loss_on_diag", "train_loss_off_diag", "alpha", "feature_input_jacobian", "effective_rank"],
+    "metrics": ["train_loss", "train_loss_on_diag", "train_loss_off_diag", "alpha", "feature_input_jacobian",],
     "performance_metrics": ["test_loss", "test_loss_on_diag", "test_loss_off_diag",],
+    "linear_eval_metrics": ["train_acc_1", "test_acc_1", "rankme",]
 }
 
 
@@ -482,15 +489,28 @@ figure3_conf.update({
     },
 })
 
+figure3_conf.update({
+    "linear_eval_filenames": {
+        "barlow_twins": {
+            dataset: {
+                0: {
+                    width: [ f"{root_dir}_barlow_twins_subsample2-{dataset}/resnet18/width{width}/2_augs/lambd_0.005000_pdim_{32 * width}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure3_conf["seeds"] ] for width in figure3_conf["widths"]
+                },
+            } for dataset in figure3_conf["datasets"]
+        },
+    },
+})
+
 
 missing_runs = []
-def aggregate_data(destdir=plots_path):
+def aggregate_fig3(destdir=plots_path):
     """ Aggregate results for figure 3
     """
     nseeds = len(figure3_conf["seeds"])
     nmetrics = len(figure3_conf["metrics"])
     nnoise = len(figure3_conf["noise_configs"])
     nwidths = len(figure3_conf["widths"])
+    epoch = figure3_conf["epochs"][-1]
     figure3_data = figure3_conf
 
     plot_data = {}
@@ -510,7 +530,6 @@ def aggregate_data(destdir=plots_path):
                                 allow_pickle=True
                             ).tolist()
                             for m_id, metric in enumerate(figure3_conf["metrics"]):
-                                epoch = figure3_conf["epochs"][algorithm]
                                 logger.info(f"Parsing {base_model}_{width} epoch {epoch} {metric} seed {s_id}")
                                 plot_data[algorithm][dataset][base_model][w_id, m_id, s_id] = parse_stats(fname, stats, metric, epoch)
                                 
@@ -528,7 +547,6 @@ def aggregate_data(destdir=plots_path):
     performance_data = {}
     for algorithm in figure3_conf["algorithms"]:
         performance_data[algorithm] = {}
-        epoch = figure3_conf["epochs"]
         for dataset in figure3_conf["datasets"]:
             performance_data[algorithm][dataset] = {}
             for base_model in figure3_conf["base_models"]:
@@ -558,6 +576,39 @@ def aggregate_data(destdir=plots_path):
     figure3_data.pop("performance_filenames")
     figure3_data["performance_data"] = performance_data
 
+    nmetrics = len(figure3_conf["linear_eval_metrics"])
+    linear_eval_data = {}
+    for algorithm in figure3_conf["algorithms"]:
+        linear_eval_data[algorithm] = {}
+        for dataset in figure3_conf["datasets"]:
+            linear_eval_data[algorithm][dataset] = {}
+            for base_model in figure3_conf["base_models"]:
+                linear_eval_data[algorithm][dataset][base_model] = np.zeros((nnoise, nwidths, nmetrics, nseeds))
+                for n_id, noise in enumerate(figure3_conf["noise_configs"]):
+                    for w_id, width in enumerate(figure3_conf["widths"]):
+                        for s_id in range(nseeds):
+                            fname = figure3_conf["linear_eval_filenames"][algorithm][dataset][noise][width][s_id]
+                            logger.info(f"Loading {fname}")
+                            try:
+                                stats = np.load(
+                                    fname,
+                                    allow_pickle=True
+                                ).tolist()
+                                for m_id, metric in enumerate(figure3_conf["linear_eval_metrics"]):
+                                    if noise == 0 and metric in ["train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored"]: continue
+                                    logger.info(f"Parsing {base_model}_{width} epoch {epoch} {metric} seed {s_id}")
+                                    linear_eval_data[algorithm][dataset][base_model][n_id, w_id, m_id, s_id] = parse_stats(fname, stats, metric, epoch)
+                                
+                            except FileNotFoundError:
+                                logger.info(f"File not found: {fname}")
+                                missing_runs.append(fname)
+                            
+                linear_eval_data[algorithm][dataset][base_model] = \
+                    linear_eval_data[algorithm][dataset][base_model].tolist()
+    
+    figure3_data.pop("linear_eval_filenames")
+    figure3_data["linear_eval_data"] = linear_eval_data
+
     if len(missing_runs) > 0:
         logger.info("The following files were missing:")
         for f in missing_runs:
@@ -567,6 +618,190 @@ def aggregate_data(destdir=plots_path):
     logger.info(f"Saving plot data to {filename}")
     with open(filename, 'w') as fp:
         json.dump(figure3_data, fp, allow_nan=False)
+
+
+""" Figure 4
+
+    SSL pretraining: alpha, feature jacobian, rankme,
+    for Barlow Twins on Tiny CIFAR-10 on unseen classes
+    
+    algorithms: Barlow Twins
+    models: resnet18
+    datasets: cifar10 unseen
+    epoch:
+    
+    train_configs: ssl, linear
+    widths
+    seeds
+    noise configs
+    metrics
+"""
+
+figure4_conf = {
+    "algorithms": ["barlow_twins"],
+    "base_models": ["resnet18"],
+    "widths": list(range(1,65)),
+    "seeds" : [0, 1, 2],
+    "epochs": [10000,],
+    "noise_configs": [0,],
+    "datasets": ["cifar10",],
+    "metrics": ["train_loss", "train_loss_on_diag", "train_loss_off_diag", "alpha", "feature_input_jacobian",],
+    "performance_metrics": ["test_loss", "test_loss_on_diag", "test_loss_off_diag",],
+    "linear_eval_metrics": ["train_acc_1", "test_acc_1", "rankme",]
+}
+
+
+figure4_conf.update({
+    "filenames": {
+        "barlow_twins": {
+            dataset: {
+                width: [ f"{root_dir}_barlow_twins_unseen2-{dataset}/resnet18/width{width}/2_augs/lambd_0.005000_pdim_{32 * width}_lr_0.0001_wd_1e-06/results_{dataset}_alpha_ssl_10000_seed_{seed}.npy"  for seed in figure4_conf["seeds"] ] for width in figure4_conf["widths"]
+            } for dataset in figure4_conf["datasets"]
+        },
+    },
+})
+
+figure4_conf.update({
+    "performance_filenames": {
+        "barlow_twins": {
+            dataset: {
+                0: {
+                    width: [ f"{root_dir}_barlow_twins_unseen2-{dataset}/resnet18/width{width}/2_augs/lambd_0.005000_pdim_{32 * width}_lr_0.0001_wd_1e-06/results_{dataset}_ssl_eval_ssl_10000_seed_{seed}.npy"  for seed in figure4_conf["seeds"] ] for width in figure4_conf["widths"]
+                },
+            } for dataset in figure4_conf["datasets"]
+        },
+    },
+})
+
+figure4_conf.update({
+    "linear_eval_filenames": {
+        "barlow_twins": {
+            dataset: {
+                0: {
+                    width: [ f"{root_dir}_barlow_twins_unseen2-{dataset}/resnet18/width{width}/2_augs/lambd_0.005000_pdim_{32 * width}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure4_conf["seeds"] ] for width in figure4_conf["widths"]
+                },
+            } for dataset in figure4_conf["datasets"]
+        },
+    },
+})
+
+
+missing_runs = []
+def aggregate_fig4(destdir=plots_path):
+    """ Aggregate results for figure 4
+    """
+    nseeds = len(figure4_conf["seeds"])
+    nmetrics = len(figure4_conf["metrics"])
+    nnoise = len(figure4_conf["noise_configs"])
+    nwidths = len(figure4_conf["widths"])
+    epoch = figure4_conf["epochs"][-1]
+    figure4_data = figure4_conf
+
+    plot_data = {}
+    for algorithm in figure4_conf["algorithms"]:
+        plot_data[algorithm] = {}
+        for dataset in figure4_conf["datasets"]:
+            plot_data[algorithm][dataset] = {}
+            for base_model in figure4_conf["base_models"]:
+                plot_data[algorithm][dataset][base_model] = np.zeros((nwidths, nmetrics, nseeds))
+                for w_id, width in enumerate(figure4_conf["widths"]):
+                    for s_id in range(nseeds):
+                        fname = figure4_conf["filenames"][algorithm][dataset][width][s_id]
+                        logger.info(f"Loading {fname}")
+                        try:
+                            stats = np.load(
+                                fname,
+                                allow_pickle=True
+                            ).tolist()
+                            for m_id, metric in enumerate(figure4_conf["metrics"]):
+                                logger.info(f"Parsing {base_model}_{width} epoch {epoch} {metric} seed {s_id}")
+                                plot_data[algorithm][dataset][base_model][w_id, m_id, s_id] = parse_stats(fname, stats, metric, epoch)
+                                
+                        except FileNotFoundError:
+                            logger.info(f"File not found: {fname}")
+                            missing_runs.append(fname)
+                            
+                plot_data[algorithm][dataset][base_model] = \
+                    plot_data[algorithm][dataset][base_model].tolist()
+        
+    figure4_data.pop("filenames")
+    figure4_data["plot_data"] = plot_data
+    
+    nmetrics = len(figure4_conf["performance_metrics"])
+    performance_data = {}
+    for algorithm in figure4_conf["algorithms"]:
+        performance_data[algorithm] = {}
+        for dataset in figure4_conf["datasets"]:
+            performance_data[algorithm][dataset] = {}
+            for base_model in figure4_conf["base_models"]:
+                performance_data[algorithm][dataset][base_model] = np.zeros((nnoise, nwidths, nmetrics, nseeds))
+                for n_id, noise in enumerate(figure4_conf["noise_configs"]):
+                    for w_id, width in enumerate(figure4_conf["widths"]):
+                        for s_id in range(nseeds):
+                            fname = figure4_conf["performance_filenames"][algorithm][dataset][noise][width][s_id]
+                            logger.info(f"Loading {fname}")
+                            try:
+                                stats = np.load(
+                                    fname,
+                                    allow_pickle=True
+                                ).tolist()
+                                for m_id, metric in enumerate(figure4_conf["performance_metrics"]):
+                                    if noise == 0 and metric in ["train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored"]: continue
+                                    logger.info(f"Parsing {base_model}_{width} epoch {epoch} {metric} seed {s_id}")
+                                    performance_data[algorithm][dataset][base_model][n_id, w_id, m_id, s_id] = parse_stats(fname, stats, metric, epoch)
+                                
+                            except FileNotFoundError:
+                                logger.info(f"File not found: {fname}")
+                                missing_runs.append(fname)
+                            
+                performance_data[algorithm][dataset][base_model] = \
+                    performance_data[algorithm][dataset][base_model].tolist()
+    
+    figure4_data.pop("performance_filenames")
+    figure4_data["performance_data"] = performance_data
+
+    nmetrics = len(figure4_conf["linear_eval_metrics"])
+    linear_eval_data = {}
+    for algorithm in figure4_conf["algorithms"]:
+        linear_eval_data[algorithm] = {}
+        for dataset in figure4_conf["datasets"]:
+            linear_eval_data[algorithm][dataset] = {}
+            for base_model in figure4_conf["base_models"]:
+                linear_eval_data[algorithm][dataset][base_model] = np.zeros((nnoise, nwidths, nmetrics, nseeds))
+                for n_id, noise in enumerate(figure4_conf["noise_configs"]):
+                    for w_id, width in enumerate(figure4_conf["widths"]):
+                        for s_id in range(nseeds):
+                            fname = figure4_conf["linear_eval_filenames"][algorithm][dataset][noise][width][s_id]
+                            logger.info(f"Loading {fname}")
+                            try:
+                                stats = np.load(
+                                    fname,
+                                    allow_pickle=True
+                                ).tolist()
+                                for m_id, metric in enumerate(figure4_conf["linear_eval_metrics"]):
+                                    if noise == 0 and metric in ["train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored"]: continue
+                                    logger.info(f"Parsing {base_model}_{width} epoch {epoch} {metric} seed {s_id}")
+                                    linear_eval_data[algorithm][dataset][base_model][n_id, w_id, m_id, s_id] = parse_stats(fname, stats, metric, epoch)
+                                
+                            except FileNotFoundError:
+                                logger.info(f"File not found: {fname}")
+                                missing_runs.append(fname)
+                            
+                linear_eval_data[algorithm][dataset][base_model] = \
+                    linear_eval_data[algorithm][dataset][base_model].tolist()
+    
+    figure4_data.pop("linear_eval_filenames")
+    figure4_data["linear_eval_data"] = linear_eval_data
+
+    if len(missing_runs) > 0:
+        logger.info("The following files were missing:")
+        for f in missing_runs:
+            logger.info(f)
+
+    filename = os.path.join(destdir, 'plot_data.json')
+    logger.info(f"Saving plot data to {filename}")
+    with open(filename, 'w') as fp:
+        json.dump(figure4_data, fp, allow_nan=False)
 
 
 
@@ -580,17 +815,22 @@ def aggregate_stats(fig_id):
         destdir = os.path.join(plots_path, 'figure1')
         if not os.path.exists(destdir):
             os.makedirs(destdir)
-        aggregate_data(destdir)
+        aggregate_fig1(destdir)
     elif fig_id == 2:
         destdir = os.path.join(plots_path, 'figure2')
         if not os.path.exists(destdir):
             os.makedirs(destdir)
-        aggregate_data(destdir)
+        aggregate_fig2(destdir)
     elif fig_id == 3:
         destdir = os.path.join(plots_path, 'figure3')
         if not os.path.exists(destdir):
             os.makedirs(destdir)
-        aggregate_data(destdir)
+        aggregate_fig3(destdir)
+    elif fig_id == 4:
+        destdir = os.path.join(plots_path, 'figure4')
+        if not os.path.exists(destdir):
+            os.makedirs(destdir)
+        aggregate_fig4(destdir)
     else:
         raise ValueError(f"Invalid figure id {fig_id}")
 
@@ -625,7 +865,7 @@ def main():
     global logger
     logger = logging.getLogger()
 
-    for fig_id in [2]:
+    for fig_id in [4]:
         aggregate_stats(fig_id)
 
 
