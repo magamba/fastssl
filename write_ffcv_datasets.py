@@ -139,51 +139,58 @@ def add_label_noise(targets,noise_percentage=0.1,seed=1234):
 		new_labels = list(new_labels)
 	return new_labels
 
+if dataset=='cifar10':
+	CIFAR10 = torchvision.datasets.CIFAR10
+	
+	if noise_level > 0:
+		CIFAR10 = with_indices(
+			CIFAR10
+		)
+
+	trainset = CIFAR10(
+	    root=dataset_folder, train=True, download=False, transform=None
+	)
+	    
+	testset = torchvision.datasets.CIFAR10(
+	    root=dataset_folder, train=False, download=False, transform=None
+	)
+
+if dataset=='cifar100':
+	CIFAR100 = torchvision.datasets.CIFAR100
+	if noise_level > 0:
+		CIFAR100 = with_indices(
+			CIFAR100
+		)
+
+	trainset = CIFAR100(
+	    root=dataset_folder, train=True, download=False, transform=None
+	)
+	testset = torchvision.datasets.CIFAR100(
+	    root=dataset_folder, train=False, download=False, transform=None
+	)
+
+elif dataset=='stl10':
+	STL10 = torchvision.datasets.STL10
+	if noise_level > 0:
+		STL10 = with_indices(
+			STL10
+		)
+
+    unlabeledset = torchvision.datasets.STL10(
+        root=dataset_folder, split="unlabeled", download=False, transform=None
+    )
+	trainset = STL10(
+	    root=dataset_folder, split='train', download=False, transform=None)
+	testset = torchvision.datasets.STL10(
+	    root=dataset_folder, split='test', download=False, transform=None)
+
+dataset_str = f"{dataset}_" if noise_level == 0 and not subsample_classes else ""
+train_beton_fpath = os.path.join(ffcv_folder, dataset_str + "train.beton")
+test_beton_fpath = os.path.join(ffcv_folder, dataset_str + "test.beton")
+	
 ## WRITE TO BETON FILES
-if write_dataset:
-	if dataset=='cifar10':
-		CIFAR10 = torchvision.datasets.CIFAR10
-		
-		if noise_level > 0:
-			CIFAR10 = with_indices(
-				CIFAR10
-			)
-	
-		trainset = CIFAR10(
-		    root=dataset_folder, train=True, download=False, transform=None)
-		    
-		testset = torchvision.datasets.CIFAR10(
-		    root=dataset_folder, train=False, download=False, transform=None)
-
-	if dataset=='cifar100':
-		CIFAR100 = torchvision.datasets.CIFAR100
-		if noise_level > 0:
-			CIFAR100 = with_indices(
-				CIFAR100
-			)
-	
-		trainset = CIFAR100(
-		    root=dataset_folder, train=True, download=False, transform=None)
-		testset = torchvision.datasets.CIFAR100(
-		    root=dataset_folder, train=False, download=False, transform=None)
-
-	elif dataset=='stl10':
-		STL10 = torchvision.datasets.STL10
-		if noise_level > 0:
-			STL10 = with_indices(
-				STL10
-			)
-	
-		trainset = STL10(
-		    root=dataset_folder, split='train', download=False, transform=None)
-		testset = torchvision.datasets.STL10(
-		    root=dataset_folder, split='test', download=False, transform=None)
-
-	dataset_str = f"{dataset}_" if noise_level == 0 and not subsample_classes else ""
-	train_beton_fpath = os.path.join(ffcv_folder, dataset_str + "train.beton")
-	test_beton_fpath = os.path.join(ffcv_folder, dataset_str + "test.beton")
+if write_dataset:	
 	datasets = {'train': trainset, 'test':testset}
-
 	for name,ds in datasets.items():
 		#breakpoint()
 		if dataset == "cifar10" and subsample_classes:
@@ -217,29 +224,49 @@ if write_dataset:
 			})
 		writer = DatasetWriter(path, fields)
 		writer.from_indexed_dataset(ds)
+	if dataset=='stl10':
+        datasets = {"unlabeled": unlabeledset}
+        unlabeled_beton_fpath = os.path.join(ffcv_folder, "unlabeled.beton")
+        for name, ds in datasets.items():
+            breakpoint()
+            path = unlabeled_beton_fpath
+            writer = DatasetWriter(path, {"image": RGBImageField(), "label": IntField()})
+            writer.from_indexed_dataset(ds)
 
 ## VERIFY the WRITTEN DATASET
 BATCH_SIZE = 500
 loaders = {}
-for name in ['train','test']:
-	label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), Squeeze()]	# ToDevice('cuda:0'),
-	image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
+for name in ["train", "test"]:
+    label_pipeline: List[Operation] = [
+        IntDecoder(),
+        ToTensor(),
+        Squeeze(),
+    ]  # ToDevice('cuda:0'),
+    image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
 
-	image_pipeline.extend([ToTensor(),
-        # ToDevice('cuda:0', non_blocking=True),
-        ToTorchImage(),
-        # torchvision.transforms.ConvertImageDtype(torch.float32),
-        Convert(torch.float32),
-        ])
-
-	pipelines = {'image': image_pipeline, 'label': label_pipeline}
+    image_pipeline.extend(
+        [
+            ToTensor(),
+            # ToDevice('cuda:0', non_blocking=True),
+            ToTorchImage(),
+            # torchvision.transforms.ConvertImageDtype(torch.float32),
+            Convert(torch.float32),
+        ]
+    )
+    
+    pipelines = {'image': image_pipeline, 'label': label_pipeline}
 	if noise_level > 0:
 		pipelines.update({'ground_truth': label_pipeline, 'sample_idx': label_pipeline})
-	loaders[name] = Loader(os.path.join(ffcv_folder,'{}.beton'.format(name)),
-							batch_size=BATCH_SIZE, num_workers=1,
-							order=OrderOption.SEQUENTIAL,
-							# drop_last=(name=='train'),
-							pipelines=pipelines)
+
+    loaders[name] = Loader(
+        os.path.join(ffcv_folder, "{}.beton".format(name)),
+        batch_size=BATCH_SIZE,
+        num_workers=1,
+        order=OrderOption.SEQUENTIAL,
+        # drop_last=(name=='train'),
+        drop_last=False,
+        pipelines=pipelines,
+    )
 
 transform_test = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
 
@@ -330,8 +357,10 @@ for inp in trainloader:
 	nb_samples += batch_samples
 mean /= nb_samples
 std /= nb_samples
-print("Train Dataset mean",mean)
-print("Train Dataset std",std)
+print("Train Dataset mean", mean)
+print("Train Dataset std", std)
+print("Train Dataset mean*255", mean*255)
+print("Train Dataset std*255", std*255)
 mean = 0.0
 std = 0.0
 nb_samples = 0.
@@ -345,6 +374,8 @@ mean /= nb_samples
 std /= nb_samples
 print("Test Dataset mean",mean)
 print("Test Dataset std",std)
+print("Test Dataset mean*255", mean*255)
+print("Test Dataset std*255", std*255)
 
 if noise_level > 0:
 	num_corrupted_ffcv = 0.

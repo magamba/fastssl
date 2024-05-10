@@ -129,7 +129,7 @@ def gen_image_label_pipeline(
         num_workers (int, optional): number of CPU workers. Defaults to None.
         transform_cls (CifarClassifierTransform, optional): Transforms to be applied for the original image. Defaults to None.
         rescale (bool, optional): Flag to rescale pixel vals to [0,1]. Defaults to False.
-        device (_type_, optional): CPU/GPU. Defaults to 'cuda:0'.
+        device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
         num_augmentations (int, optional): Number of total image augmentations. Defaults to 1.
         transform_cls_augs (CifarTransformFFCV, optional): Transforms to be applied to generate other augmentations. Defaults to None.
 
@@ -201,7 +201,7 @@ def gen_image_label_pipeline_ffcv_ssl_test(
         num_workers (int, optional): Number of CPU workers. Defaults to None.
         transform_cls (CifarTransformFFCV, optional): Transform object. Defaults to None.
         rescale (bool, optional): Flag to rescale pixel vals to [0,1]. Defaults to False.
-        device (_type_, optional): CPU/GPU. Defaults to 'cuda:0'.
+        device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
         num_augmentations (int, optional): Number of patches. Defaults to 2.
 
     Returns:
@@ -251,14 +251,20 @@ def gen_image_label_pipeline_ffcv_ssl(
     device: str = "cuda:0",
     num_augmentations: int = 2,
 ):
-    """
+    """Function for generating multiple augmentations from each image.
+
     Args:
-        train_dataset : path to train dataset
-        val_dataset   : path to test dataset
-        batch_size    : batch-size
-        num_workers   : number of workers
-    Returns
-        loaders       : dict('train': dataloader, 'test': dataloader)
+        train_dataset (str, optional): Train dataset filename. Defaults to None.
+        val_dataset (str, optional): Test dataset filename. Defaults to None.
+        batch_size (int, optional): Batch size. Defaults to None.
+        num_workers (int, optional): Number of CPU workers. Defaults to None.
+        transform_cls (CifarTransformFFCV, optional): Transform object. Defaults to None.
+        rescale (bool, optional): Flag to rescale pixel vals to [0,1]. Defaults to False.
+        device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
+        num_augmentations (int, optional): Number of patches. Defaults to 2.
+
+    Returns:
+        loaders: dict('train': dataloader, 'test': dataloader)
     """
 
     datadir = {"train": train_dataset, "test": val_dataset}
@@ -333,6 +339,21 @@ def cifar_ffcv(
     num_augmentations: int = 2,
     test_ffcv: bool = False,
 ):
+    """Function to return dataloader for Cifar-10 SSL
+
+    Args:
+        train_dataset (str, optional): Train dataset filename. Defaults to None.
+        val_dataset (str, optional): Test dataset filename. Defaults to None.
+        batch_size (int, optional): Batch size. Defaults to None.
+        num_workers (int, optional): Number of CPU workers. Defaults to None.
+        device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
+        num_augmentations (int, optional): Number of patches. Defaults to 2.
+        test_ffcv (bool, optional): Flag to use pipeline for testing FFCV multi-augmentations
+
+    Returns:
+        loaders : dict('train': dataloader, 'test': dataloader)
+    """
+
     # transform_cls = CifarTransform
     transform_cls = CifarTransformFFCV()
     if test_ffcv:
@@ -360,18 +381,18 @@ def cifar_classifier_ffcv(
     num_augmentations: int = 1,
     label_noise: int = 0,
 ):
-    """Function to return
+    """Function to return dataloader for Cifar-10 classification
 
     Args:
-        train_dataset (str, optional): _description_. Defaults to None.
-        val_dataset (str, optional): _description_. Defaults to None.
-        batch_size (int, optional): _description_. Defaults to None.
-        num_workers (int, optional): _description_. Defaults to None.
-        device (_type_, optional): _description_. Defaults to "cuda:0".
-        num_augmentations (int, optional): _description_. Defaults to 1.
+        train_dataset (str, optional): Train dataset filename. Defaults to None.
+        val_dataset (str, optional): Test dataset filename. Defaults to None.
+        batch_size (int, optional): Batch size. Defaults to None.
+        num_workers (int, optional): Number of CPU workers. Defaults to None.
+        device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
+        num_augmentations (int, optional): Number of patches. Defaults to 1.
 
     Returns:
-        _type_: _description_
+        loaders : dict('train': dataloader, 'test': dataloader)
     """
 
     transform_cls = CifarClassifierTransform

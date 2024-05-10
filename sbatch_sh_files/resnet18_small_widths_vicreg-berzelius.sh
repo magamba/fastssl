@@ -8,7 +8,8 @@
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /proj/memorization/logs/%A_%a.out
 #SBATCH --error /proj/memorization/logs/%A_%a.err
-#SBATCH --array=0-191%64
+#SBATCH --array=23,87,151
+###SBATCH --array=0-191%64
 
 NAME="ssl_vicreg"
 

@@ -2,13 +2,14 @@
 
 #SBATCH -A berzelius-2023-229
 #SBATCH --gpus=1
-#SBATCH -t 6:00:00
+#SBATCH -t 12:00:00
 #SBATCH -C fat
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /proj/memorization/logs/%A_%a.out
 #SBATCH --error /proj/memorization/logs/%A_%a.err
-#SBATCH --array=0-191%64
+#SBATCH --array=144-191%64
+#####SBATCH --array=0-191%64
 
 NAME="ssl_barlow_twins"
 
@@ -22,17 +23,17 @@ fi
 
 WANDB__SERVICE_WAIT=300
 
-dataset='stl10'
-#dataset='cifar10'
+#dataset='stl10'
+dataset='cifar10'
 if [ $dataset = 'stl10' ]
 then
     batch_size=256
-    jac_batch_size=8
+    jac_batch_size=1
     proj_str="bt-stl10x-"
     ckpt_str="-stl10"
 else
     batch_size=512
-    jac_batch_size=2
+    jac_batch_size=1
     proj_str="bt-cifar10-"
     ckpt_str="-cifar10"
 fi

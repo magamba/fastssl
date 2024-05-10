@@ -2,19 +2,13 @@
 
 #SBATCH -A berzelius-2023-229
 #SBATCH --gpus=1
-#SBATCH -t 6:00:00
+#SBATCH -t 1:00:00
 #SBATCH -C thin
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /proj/memorization/logs/%A_%a.out
 #SBATCH --error /proj/memorization/logs/%A_%a.err
-#SBATCH --array 351-377,621-647
-#######was SBATCH --array=39-41,69-71,81-83
-#######SBATCH --array=297-323
-#######was SBATCH --array=33-35
-#######SBATCH --array 729-755
-#######was SBATCH --array=81-83
-####SBATCH --array=0-1727%64
+#SBATCH --array=0-191%64
 
 NAME="ssl_barlow_twins"
 
@@ -45,32 +39,27 @@ fi
 
 label_noise=(
     0
-    5
-    10
-    15
-    20
-    40
-    60
-    80
-    100
+#    5
+#    10
+#    15
+#    20
+#    40
+#    60
+#    80
+#    100
 )
 
-NOISE=${#label_noise[@]}
+noise=${label_noise[0]}
+
 SEEDS=3
-NCONFS=$((NOISE * SEEDS))
 
-width=$((1+SLURM_ARRAY_TASK_ID/NCONFS))
+width=$((1+SLURM_ARRAY_TASK_ID/SEEDS))
 width=$((width + 64))
-conf=$((SLURM_ARRAY_TASK_ID%NCONFS))
-
-noise_id=$((conf % NOISE))
-noise=${label_noise[$noise_id]}
-seed=$((conf / NOISE))
+seed=$((SLURM_ARRAY_TASK_ID%SEEDS))
 
 echo "Model width: $width"
 echo "Seed: $seed"
 echo "Label noise: $noise"
-echo "Old JobId: $(( (width -1) * SEEDS ))"
 
 num_workers=16
 

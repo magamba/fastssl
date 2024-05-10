@@ -8,7 +8,8 @@
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /proj/memorization/logs/%A_%a.out
 #SBATCH --error /proj/memorization/logs/%A_%a.err
-#SBATCH --array=0-191%64
+#SBATCH --array=189
+#####SBATCH --array=0-191%64
 
 NAME="ssl_simclr"
 
@@ -41,6 +42,7 @@ num_workers=16
 width=$((1+SLURM_ARRAY_TASK_ID/SEEDS))
 seed=$((SLURM_ARRAY_TASK_ID%SEEDS))
 temperature=0.5
+learning_rate=0.6 # square root lr rule for batch size 512, according to SimCLR
 #pdim=2048
 pdim=$(($width * 32))
 
@@ -69,6 +71,7 @@ python scripts/train_model_widthVary.py --config-file configs/cc_SimCLR.yaml \
                     --training.batch_size=$batch_size --training.model=$model \
                     --training.seed=$seed \
                     --training.epochs=400 \
+                    --training.lr=$learning_rate \
                     --training.train_dataset=${trainset}_train.beton \
                     --training.val_dataset=${testset}_test.beton \
                     --training.num_workers=$num_workers \

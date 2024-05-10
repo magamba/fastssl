@@ -9,6 +9,7 @@
 #SBATCH --output /proj/memorization/logs/%A_%a.out
 #SBATCH --error /proj/memorization/logs/%A_%a.err
 #SBATCH --array=0-191%64
+###SBATCH --array=69-71
 
 NAME="ssl_barlow_twins"
 
@@ -31,18 +32,18 @@ then
     proj_str="bt-stl10x-"
     ckpt_str="-stl10"
 else
-    batch_size=512
+    batch_size=256 # 512
     jac_batch_size=2
     proj_str="bt-cifar10-"
     ckpt_str="-cifar10"
 fi
 
 SEEDS=3
-
+WIDTHS=64
 num_workers=16
 
-width=$((1+SLURM_ARRAY_TASK_ID/SEEDS))
-seed=$((SLURM_ARRAY_TASK_ID%SEEDS))
+width=$((1+SLURM_ARRAY_TASK_ID%WIDTHS))
+seed=$((SLURM_ARRAY_TASK_ID/WIDTHS))
 lambd=0.005
 #pdim=2048
 pdim=$(($width * 32))
@@ -53,8 +54,8 @@ model=resnet18proj_width${width}
 
 ## configure checkpointing dirs and dataset paths
 
-wandb_projname="$proj_str"'ssl-effective_rank+overfit-subsample'
-checkpt_dir="${SAVE_DIR}"/"$NAME""_subsample""$ckpt_str"
+wandb_projname="$proj_str"'ssl-effective_rank+overfit-subsample2'
+checkpt_dir="${SAVE_DIR}"/"$NAME""_subsample2""$ckpt_str"
 
 if [ ! -d "$checkpt_dir" ]
 then
@@ -62,9 +63,10 @@ then
 fi
 
 # dataset locations
-trainset="${DATA_DIR}"/$dataset"-subsampled"
-testset="${DATA_DIR}"/$dataset"-subsampled"
+trainset="${DATA_DIR}"/$dataset"-subsampled_2"
+testset="${DATA_DIR}"/$dataset"-subsampled_2"
 
+#                    --training.weight_decay=1e-5 \
 
 # Let's train a SSL (BarlowTwins) model with the above hyperparams
 python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.yaml \
@@ -79,8 +81,9 @@ python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.ya
                     --training.track_alpha=True \
                     --training.track_jacobian=True \
                     --training.jacobian_batch_size=$jac_batch_size \
-                    --training.weight_decay=1e-5 \
-                    --training.epochs=300 \
+                    --training.lr=1e-4 \
+                    --training.epochs=10000 \
+                    --training.subsample_classes=True \
                     --eval.subsample_classes=True \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
@@ -88,11 +91,14 @@ python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.ya
 status=$?
 
 # let's save the model checkpoints to persistent storage
-destdir=$checkpt_dir/resnet18/width${width}/2_augs/lambd_"$lambd"000_pdim_"$pdim"_lr_0.001_wd_1e-05/2_augs_train
+#destdir=$checkpt_dir/resnet18/width${width}/2_augs/lambd_"$lambd"000_pdim_"$pdim"_lr_0.001_wd_1e-05/2_augs_train
+destdir=$checkpt_dir/resnet18/width${width}/2_augs/lambd_"$lambd"000_pdim_"$pdim"_lr_0.0001_wd_1e-06/2_augs_train
 if [ ! -d $destdir ]; then
     mkdir -p $destdir
 fi
-cp -v "$SLURM_TMPDIR/exp_ssl_100.pth" "$destdir/exp_ssl_300_seed_"$seed".pt"
+
+#cp -v "$SLURM_TMPDIR/exp_ssl_100.pth" "$destdir/exp_ssl_20000_seed_"$seed".pt"
+cp -v "$SLURM_TMPDIR/exp_ssl_10000.pth" "$destdir/exp_ssl_10000_seed_"$seed".pt"
 
 new_status=$?
 status=$((status|new_status))
