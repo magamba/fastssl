@@ -13,11 +13,35 @@ from ffcv.pipeline.operation import Operation
 from ffcv.transforms import RandomHorizontalFlip, Cutout, \
     RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage
 from ffcv.transforms.common import Squeeze
+from fastssl.utils.ood import CIFAR10C
 
 write_dataset = True
 noise_level = 0
-subsample_classes = True # if enabled, generates a reduced version of the dataset, with only a few classes sampled
-unseen_classes = True # if true, sample classes from a secondary list
+subsample_classes = False # if enabled, generates a reduced version of the dataset, with only a few classes sampled
+unseen_classes = False # if true, sample classes from a secondary list
+
+noise_type = "brightness"
+ood_noise_types = [
+    "brightness",
+    "defocus_blur",
+    "frost",
+    "glass_blur",
+    "saturate",
+    "spatter",
+    "elastic_transform",
+    "gaussian_blur",
+    "impulse_noise",
+    "motion_blur",
+    "shot_noise",
+    "speckle_noise",
+    "contrast",
+    "fog",
+    "gaussian_noise",
+    "jpeg_compression",
+    "pixelate",
+    "snow",
+    "zoom_blur",
+]
 
 if unseen_classes:
     assert subsample_classes, "Error: subsample_classes must be True when unseen_classes is True"
@@ -57,6 +81,10 @@ if noise_level>0:
 if subsample_classes or noise_level > 0:
     ffcv_folder = os.path.join(ffcv_folder, folder_name)
 
+if dataset == "cifar10c":
+    assert noise_level == 0, "Error only test set available for CIFAR10-C"
+    ffcv_folder = os.path.join(ffcv_folder, noise_type)
+
 def with_indices(datasetclass):
     """ Wraps a DataSet class, so that it returns (data, target, index, ground_truth).
     """
@@ -91,7 +119,7 @@ def subsample_dataset(dataset, classes_to_keep, samples_per_class, train=False):
   
     sample_idx = np.where(samples_mask)[0]
     
-    targets = targets[sample_idx]  
+    targets = targets[sample_idx]
     dataset.data = dataset.data[sample_idx]
     dataset.classes = classes_to_keep
     
@@ -169,29 +197,36 @@ if dataset=='cifar100':
 	    root=dataset_folder, train=False, download=False, transform=None
 	)
 
+if dataset=='cifar10c':
+        trainset = None
+        testset = CIFAR10C(
+            root=dataset_folder, noise_type=noise_type, train=False, download=False, transform=None
+        )
+
 elif dataset=='stl10':
-	STL10 = torchvision.datasets.STL10
-	if noise_level > 0:
-		STL10 = with_indices(
-			STL10
-		)
+        STL10 = torchvision.datasets.STL10
+        if noise_level > 0:
+                STL10 = with_indices(
+                    STL10
+                )
 
     unlabeledset = torchvision.datasets.STL10(
         root=dataset_folder, split="unlabeled", download=False, transform=None
     )
-	trainset = STL10(
-	    root=dataset_folder, split='train', download=False, transform=None)
-	testset = torchvision.datasets.STL10(
-	    root=dataset_folder, split='test', download=False, transform=None)
+        trainset = STL10(
+            root=dataset_folder, split='train', download=False, transform=None)
+        testset = torchvision.datasets.STL10(
+            root=dataset_folder, split='test', download=False, transform=None)
 
-dataset_str = f"{dataset}_" if noise_level == 0 and not subsample_classes else ""
+dataset_str = f"{dataset}_" if noise_level == 0 and not subsample_classes and dataset != "cifar10c" else ""
 train_beton_fpath = os.path.join(ffcv_folder, dataset_str + "train.beton")
 test_beton_fpath = os.path.join(ffcv_folder, dataset_str + "test.beton")
 	
 ## WRITE TO BETON FILES
-if write_dataset:	
+if write_dataset:
 	datasets = {'train': trainset, 'test':testset}
 	for name,ds in datasets.items():
+                if dataset == "cifar10c" and name == "train": continue
 		#breakpoint()
 		if dataset == "cifar10" and subsample_classes:
 		    ds = subsample_dataset(ds, classes_to_keep, samples_per_class, train= name == "train")
@@ -225,18 +260,19 @@ if write_dataset:
 		writer = DatasetWriter(path, fields)
 		writer.from_indexed_dataset(ds)
 	if dataset=='stl10':
-        datasets = {"unlabeled": unlabeledset}
-        unlabeled_beton_fpath = os.path.join(ffcv_folder, "unlabeled.beton")
-        for name, ds in datasets.items():
-            breakpoint()
-            path = unlabeled_beton_fpath
-            writer = DatasetWriter(path, {"image": RGBImageField(), "label": IntField()})
-            writer.from_indexed_dataset(ds)
+            datasets = {"unlabeled": unlabeledset}
+            unlabeled_beton_fpath = os.path.join(ffcv_folder, "unlabeled.beton")
+            for name, ds in datasets.items():
+                breakpoint()
+                path = unlabeled_beton_fpath
+                writer = DatasetWriter(path, {"image": RGBImageField(), "label": IntField()})
+                writer.from_indexed_dataset(ds)
 
 ## VERIFY the WRITTEN DATASET
 BATCH_SIZE = 500
 loaders = {}
 for name in ["train", "test"]:
+    if name == "train" and dataset == "cifar10c": continue
     label_pipeline: List[Operation] = [
         IntDecoder(),
         ToTensor(),
@@ -270,6 +306,7 @@ for name in ["train", "test"]:
 
 transform_test = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
 
+skip_train = False
 if dataset=='cifar10':
 	dataset_cls = torchvision.datasets.CIFAR10
 	if noise_level > 0:
@@ -289,6 +326,10 @@ elif dataset=='cifar100':
 	    root=dataset_folder, train=True, download=False, transform=transform_test)
 	testset = torchvision.datasets.CIFAR100(
 	    root=dataset_folder, train=False, download=False, transform=transform_test)
+elif dataset=='cifar10c':
+        skip_train = True
+	testset = CIFAR10C(
+	    root=dataset_folder, noise_type=noise_type, train=False, download=False, transform=None)
 elif dataset=='stl10':
 	dataset_cls = torchvision.datasets.STL10
 	if noise_level > 0:
@@ -298,38 +339,40 @@ elif dataset=='stl10':
 	testset = torchvision.datasets.STL10(
 	    root=dataset_folder, split='test', download=False, transform=transform_test)
 
-trainloader = torch.utils.data.DataLoader(
-	trainset, batch_size=BATCH_SIZE, shuffle=False, num_workers=1)
+if not skip_train:
+	trainloader = torch.utils.data.DataLoader(
+		trainset, batch_size=BATCH_SIZE, shuffle=False, num_workers=1)
 testloader = torch.utils.data.DataLoader(
 	testset, batch_size=BATCH_SIZE, shuffle=False, num_workers=1)
 
-if noise_level > 0:
-	X_ffcv, y_ffcv, gt_ffcv, sid_ffcv = next(iter(loaders['train']))
-	X_tv, y_tv, gt_tv, sid_tv = next(iter(trainloader))
-else:
-	X_ffcv, y_ffcv = next(iter(loaders['train']))
-	X_tv, y_tv = next(iter(trainloader))
-print('FFCV stats:',X_ffcv.shape,X_ffcv.mean(),X_ffcv.min(),X_ffcv.max())
-print('torchV stats:',X_tv.shape,X_tv.mean(),X_tv.min(),X_tv.max())
-print(torch.allclose(X_ffcv,X_tv*255.))
-#breakpoint()
+if not skip_train:
+	if noise_level > 0:
+		X_ffcv, y_ffcv, gt_ffcv, sid_ffcv = next(iter(loaders['train']))
+		X_tv, y_tv, gt_tv, sid_tv = next(iter(trainloader))
+	else:
+		X_ffcv, y_ffcv = next(iter(loaders['train']))
+		X_tv, y_tv = next(iter(trainloader))
+	print('FFCV stats:',X_ffcv.shape,X_ffcv.mean(),X_ffcv.min(),X_ffcv.max())
+	print('torchV stats:',X_tv.shape,X_tv.mean(),X_tv.min(),X_tv.max())
+	print(torch.allclose(X_ffcv,X_tv*255.))
+	#breakpoint()
 
-# calculate mean and std of dataset
-print("ffcv dataset stats...")
-mean = 0.0
-std = 0.0
-nb_samples = 0.
-for inp in loaders['train']:
-	img = inp[0]
-	batch_samples = img.size(0)
-	data = img.view(batch_samples,img.size(1),-1)
-	mean+= data.mean(2).sum(0)
-	std+= data.std(2).sum(0)
-	nb_samples += batch_samples
-mean /= nb_samples
-std /= nb_samples
-print("Train Dataset mean",mean)
-print("Train Dataset std",std)
+	# calculate mean and std of dataset
+	print("ffcv dataset stats...")
+	mean = 0.0
+	std = 0.0
+	nb_samples = 0.
+	for inp in loaders['train']:
+		img = inp[0]
+		batch_samples = img.size(0)
+		data = img.view(batch_samples,img.size(1),-1)
+		mean+= data.mean(2).sum(0)
+		std+= data.std(2).sum(0)
+		nb_samples += batch_samples
+	mean /= nb_samples
+	std /= nb_samples
+	print("Train Dataset mean",mean)
+	print("Train Dataset std",std)
 mean = 0.0
 std = 0.0
 nb_samples = 0.
@@ -345,22 +388,24 @@ print("Test Dataset mean",mean)
 print("Test Dataset std",std)
 
 print("tv dataset stats...")
-mean = 0.0
-std = 0.0
-nb_samples = 0.
-for inp in trainloader:
-	img = inp[0]
-	batch_samples = img.size(0)
-	data = img.view(batch_samples,img.size(1),-1)
-	mean+= data.mean(2).sum(0)
-	std+= data.std(2).sum(0)
-	nb_samples += batch_samples
-mean /= nb_samples
-std /= nb_samples
-print("Train Dataset mean", mean)
-print("Train Dataset std", std)
-print("Train Dataset mean*255", mean*255)
-print("Train Dataset std*255", std*255)
+if not skip_train:
+	mean = 0.0
+	std = 0.0
+	nb_samples = 0.
+	for inp in trainloader:
+		img = inp[0]
+		batch_samples = img.size(0)
+		data = img.view(batch_samples,img.size(1),-1)
+		mean+= data.mean(2).sum(0)
+		std+= data.std(2).sum(0)
+		nb_samples += batch_samples
+	mean /= nb_samples
+	std /= nb_samples
+	print("Train Dataset mean", mean)
+	print("Train Dataset std", std)
+	print("Train Dataset mean*255", mean*255)
+	print("Train Dataset std*255", std*255)
+
 mean = 0.0
 std = 0.0
 nb_samples = 0.
