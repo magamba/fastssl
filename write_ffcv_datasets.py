@@ -20,7 +20,7 @@ noise_level = 0
 subsample_classes = False # if enabled, generates a reduced version of the dataset, with only a few classes sampled
 unseen_classes = False # if true, sample classes from a secondary list
 
-noise_type = "brightness"
+noise_type = "zoom_blur"
 ood_noise_types = [
     "brightness",
     "defocus_blur",
@@ -46,7 +46,7 @@ ood_noise_types = [
 if unseen_classes:
     assert subsample_classes, "Error: subsample_classes must be True when unseen_classes is True"
 
-dataset = 'cifar10'
+dataset = 'cifar10c'
 #if dataset=='cifar10':
 #	dataset_folder = '/network/datasets/cifar10.var/cifar10_torchvision/'
 #	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar10'
@@ -69,7 +69,7 @@ if dataset_folder is None:
     raise RuntimeError("Please run scripts/setup_env first")
 ffcv_folder = dataset_folder
 
-folder_name = str(dataset)
+folder_name = str(dataset) if noise_type == "" else "cifar10-c"
 if unseen_classes:
     folder_name += "-unseen_2"
 elif subsample_classes:
@@ -78,7 +78,7 @@ elif subsample_classes:
 if noise_level>0:
     folder_name += "-Noise_{}".format(int(noise_level))
 
-if subsample_classes or noise_level > 0:
+if subsample_classes or noise_level > 0 or noise_type != "":
     ffcv_folder = os.path.join(ffcv_folder, folder_name)
 
 if dataset == "cifar10c":
@@ -200,7 +200,7 @@ if dataset=='cifar100':
 if dataset=='cifar10c':
     trainset = None
     testset = CIFAR10C(
-        root=dataset_folder, noise_type=noise_type, train=False, download=False, transform=None
+        root=os.path.join(dataset_folder, folder_name), noise_type=noise_type, transform=None
     )
 
 elif dataset=='stl10':
@@ -221,7 +221,7 @@ elif dataset=='stl10':
 dataset_str = f"{dataset}_" if noise_level == 0 and not subsample_classes and dataset != "cifar10c" else ""
 train_beton_fpath = os.path.join(ffcv_folder, dataset_str + "train.beton")
 test_beton_fpath = os.path.join(ffcv_folder, dataset_str + "test.beton")
-	
+
 ## WRITE TO BETON FILES
 if write_dataset:
     datasets = {'train': trainset, 'test':testset}
@@ -329,7 +329,7 @@ elif dataset=='cifar100':
 elif dataset=='cifar10c':
     skip_train = True
     testset = CIFAR10C(
-    root=dataset_folder, noise_type=noise_type, train=False, download=False, transform=None)
+        root=os.path.join(dataset_folder, folder_name), noise_type=noise_type, transform=transform_test)
 elif dataset=='stl10':
     dataset_cls = torchvision.datasets.STL10
     if noise_level > 0:
@@ -342,8 +342,8 @@ elif dataset=='stl10':
 if not skip_train:
     trainloader = torch.utils.data.DataLoader(
 	    trainset, batch_size=BATCH_SIZE, shuffle=False, num_workers=1)
-    testloader = torch.utils.data.DataLoader(
-        testset, batch_size=BATCH_SIZE, shuffle=False, num_workers=1)
+testloader = torch.utils.data.DataLoader(
+    testset, batch_size=BATCH_SIZE, shuffle=False, num_workers=1)
 
 if not skip_train:
     if noise_level > 0:

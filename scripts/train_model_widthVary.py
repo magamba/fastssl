@@ -112,6 +112,8 @@ Section("eval", "Fast CIFAR-10 evaluation").params(
         int, "Append TRACK_EPOCH to the linear evaluation filename", default=-1
     ),
     ssl_eval=Param(bool, "Evaluate SSL loss on the test set and exit", default=False),
+    ood_eval=Param(bool, "Evaluate OOD robustness on test set and exit", default=False),
+    ood_noise_type=Param(str, "OOD noise type", default=""),
     umap_vis=Param(bool, "Fit UMAP visualization to learned features", default=False),
 )
 
@@ -329,7 +331,7 @@ def build_model(args=None):
             "dataset": training.dataset,
             "projector_dim": training.projector_dim,
         }
-        
+
         if training.algorithm in ("byol"):
             model_args["hidden_dim"] = training.hidden_dim
             model_cls = byol.BYOL
@@ -392,7 +394,7 @@ def build_model(args=None):
         model_cls = linear.LinearClassifier
 
     model = model_cls(**model_args)
-    if eval.ssl_eval:
+    if eval.ssl_eval or eval.ood_eval:
         ckpt_path = gen_ckpt_path(training, eval, epoch=args.training.epochs)
         model.load_state_dict(
             torch.load(ckpt_path, map_location="cpu")["model"]
@@ -423,7 +425,8 @@ def build_loss_fn(args=None):
             y = y.cuda(non_blocking=True)
             # x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True)
             logits = model(x)
-            return CrossEntropyLoss(label_smoothing=0.1)(logits, y)
+            #return CrossEntropyLoss(label_smoothing=0.1)(logits, y)
+            return CrossEntropyLoss()(logits, y)
 
         return classifier_xent
     else:
@@ -1046,7 +1049,20 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 if args.label_noise > 0:
                     results["feature_input_jacobian_clean"].append((epoch, jacobian_clean))
                     results["feature_input_jacobian_corr"].append((epoch, jacobian_corr))
-            
+
+            if epoch == args.epochs:
+                ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch, suffix='pt')
+                state = dict(
+                    epoch=epoch + 1,
+                    model=model.state_dict(),
+                    optimizer=optimizer.state_dict(),
+                )
+                if scheduler is not None:
+                    state["scheduler"] = scheduler.state_dict()
+                torch.save(state, ckpt_path)
+                ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch)
+                torch.save(state, ckpt_path)
+
         elif epoch % args.log_interval == 0:
             if not eval_args.subsample_classes or epoch == args.epochs:
                 ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch, suffix='pt')
@@ -1112,7 +1128,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 log_wandb(results, step=epoch, skip_keys=['eigenspectrum'])
             else:
                 log_wandb(results, step=epoch, skip_keys=['eigenspectrum', 'base_width'])
-                
+    
     if args.track_jacobian and args.algorithm != "linear":
         # compute Jacobian before training starts!
         jacobian, jacobian_clean, jacobian_corr = input_jacobian(
@@ -1300,6 +1316,38 @@ def run_experiment(args):
             eval,
             training.epochs,
             "results_{}_ssl_eval".format(training.dataset),
+            "npy",
+        )
+        np.save(save_path, results)
+    elif eval.ood_eval:
+        print("Evaluating OOD robustness")
+        results = {
+            "test_acc_1": [],
+            "test_acc_5": [],
+        }
+        
+        loss_fn = build_loss_fn(training)
+        print("CONSTRUCTED LOSS FUNCTION")
+        
+        acc_1, acc_5 = eval_step(
+            model=model,
+            dataloader=loaders["test"],
+            epoch=training.epochs,
+            epochs=training.epochs,
+        )
+        
+        results["test_acc_1"].append(acc_1)
+        results["test_acc_5"].append(acc_5)
+        
+        if args.logging.use_wandb:
+            log_wandb(results, step=training.epochs)
+        
+        noise_type = eval.ood_noise_type
+        save_path = gen_ckpt_path(
+            training,
+            eval,
+            training.epochs,
+            "results_{}_{}_ood_eval".format(training.dataset, noise_type),
             "npy",
         )
         np.save(save_path, results)
