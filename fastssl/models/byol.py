@@ -54,14 +54,14 @@ class BYOL(SSL):
     """
     Modified ResNet50 architecture to work with CIFAR10
     """
-    def __init__(self, bkey='resnet50proj', projector_dim=128, dataset='cifar10', hidden_dim=512):
+    def __init__(self, bkey='resnet50proj', projector_dim=128, dataset='cifar10', hidden_dim=512, projector_depth=2):
         super(BYOL, self).__init__()
         self.dataset = dataset 
         self.bkey = bkey
 
         self.backbone = BackBone(
             name=self.bkey, dataset=self.dataset, 
-            projector_dim=projector_dim, hidden_dim=hidden_dim
+            projector_dim=projector_dim, hidden_dim=hidden_dim, projector_depth=projector_depth
         )
     
     def forward(self, x, use_predictor=False):

@@ -79,7 +79,7 @@ class SimCLR(SSL):
     """
 
     def __init__(
-        self, bkey="resnet50proj", projector_dim=128, dataset="cifar10", hidden_dim=512
+        self, bkey="resnet50proj", projector_dim=128, dataset="cifar10", hidden_dim=512, projector_depth=2
     ):
         super(SimCLR, self).__init__()
         self.dataset = dataset
@@ -90,6 +90,7 @@ class SimCLR(SSL):
             dataset=self.dataset,
             projector_dim=projector_dim,
             hidden_dim=hidden_dim,
+            projector_depth=2,
         )
 
     def forward(self, x):

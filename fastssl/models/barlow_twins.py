@@ -252,7 +252,7 @@ class BarlowTwins(SSL):
     """
 
     def __init__(
-        self, bkey="resnet50proj", projector_dim=128, dataset="cifar10", hidden_dim=None
+        self, bkey="resnet50proj", projector_dim=128, dataset="cifar10", hidden_dim=None, projector_depth=2
     ):
         super(BarlowTwins, self).__init__()
         self.projector_dim = projector_dim
@@ -275,6 +275,7 @@ class BarlowTwins(SSL):
             dataset=self.dataset,
             projector_dim=projector_dim,
             hidden_dim=hidden_dim,
+            projector_depth=projector_depth,
         )
 
     def forward(self, x):
