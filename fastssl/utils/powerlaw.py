@@ -90,7 +90,7 @@ def generate_activations_prelayer_torch(net,layer,data_loader,use_cuda=False,dim
     pool_size = 1
     activations = []
     def hook_fn(m,i,o):
-        activations.append(i[0])
+        activations.append(i[0].cpu())
     handle = layer.register_forward_hook(hook_fn)
 
     if use_cuda:

@@ -420,6 +420,26 @@ def get_ssltrain_imagenet_pytorch_dataloaders(
 
     return loaders
 
+def get_ssleval_imagenet_pytorch_dataloaders(
+        data_dir=None, batch_size=None, num_workers=None
+):
+    paths = {
+        'train': data_dir + '/train',
+        'test': data_dir + '/val',
+    }
+
+    loaders = {}
+
+    for name in ['train', 'test']:
+        dataset = torchvision.datasets.ImageFolder(paths[name], EvalTransform())
+        loader = torch.utils.data.DataLoader(
+            dataset, batch_size=batch_size, num_workers=num_workers,
+            pin_memory=True, shuffle=False, drop_last=True
+        )
+        loaders[name] = loader
+
+    return loaders
+
 
 def get_ssltrain_imagenet_pytorch_dataloaders_distributed(
         data_dir=None, batch_size=None, num_workers=None, world_size=None
@@ -481,6 +501,18 @@ class Transform:
         y1 = self.transform(x)
         y2 = self.transform_prime(x)
         return y1, y2
+
+class EvalTransform:
+    def __init__(self):
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                std=[0.229, 0.224, 0.225])
+        ])
+
+    def __call__(self, x):
+        y1 = self.transform(x)
+        return y1
 
 class TransformGPU:
     def __init__(self):

@@ -46,7 +46,7 @@ from fastssl.data import (
     imagenet_ffcv,
     imagenet_classifier_ffcv,
 )
-#from fastssl.data.imagenet_dataloaders import get_ssltrain_imagenet_ffcv_dataloaders, get_sseval_imagenet_ffcv_dataloaders
+from fastssl.data.imagenet_dataloaders import get_ssltrain_imagenet_pytorch_dataloaders, get_ssleval_imagenet_pytorch_dataloaders
 from fastssl.models import barlow_twins as bt
 from fastssl.models import linear, byol, simclr, vicreg
 
@@ -190,21 +190,17 @@ def build_dataloaders(
             raise Exception("Algorithm not implemented")
     elif dataset == "imagenet":
         if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
-            return imagenet_ffcv(
-                train_dataset,
-                val_dataset,
+            return get_ssltrain_imagenet_pytorch_dataloaders(
+                datadir,
                 batch_size,
                 num_workers,
-                num_augmentations=num_augmentations,
             )
         elif algorithm == "linear":
             default_linear_bsz = 512
-            return imagenet_classifier_ffcv(
-                train_dataset,
-                val_dataset,
+            return get_ssleval_imagenet_pytorch_dataloaders(
+                datadir,
                 default_linear_bsz,
                 num_workers,
-                num_augmentations=num_augmentations,
             )
     else:
         raise Exception("Dataset {} not supported".format(dataset))
@@ -469,7 +465,10 @@ def build_optimizer(model, args=None):
         if "vit" in args.model:
             warmup_epochs = 20
             def warmup(current_step: int):
-                return 1 / (10**(float(warmup_epochs - current_step)))
+                if current_step < warmup_epochs:
+                    return float((current_step +1) / warmup_epochs)
+                else:
+                    return 1.
             warmup_scheduler = lr_scheduler.LambdaLR(opt, lr_lambda=warmup)
             cosine_scheduler = lr_scheduler.CosineAnnealingLR(opt, args.epochs)
             scheduler = lr_scheduler.SequentialLR(opt, [warmup_scheduler, cosine_scheduler], [warmup_epochs])
@@ -544,6 +543,9 @@ def train_step(
             # inp is a tuple with the two augmentations.
             # This is legacy implementation of ffcv for dual augmentations
             inp = ((inp[0], inp[1]), None)
+        if isinstance(inp[0], (tuple, list)):
+            inp_augs = tuple(inp[0][1:]) if len(inp[0]) > 1 else ()
+            inp = (inp[0][0], inp[1]) + inp_augs
         ## backward
         optimizer.zero_grad()
 

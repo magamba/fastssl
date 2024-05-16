@@ -28,7 +28,6 @@ def BarlowTwinLoss(model, inp, _lambda=None):
     Returns:
         loss: scalar tensor
     """
-
     # generate samples from tuple
     inp = list(inp)
     _ = inp.pop(1)
