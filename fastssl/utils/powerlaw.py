@@ -119,7 +119,7 @@ def get_eigenspectrum_torch(activations,max_eigenvals=2048):
 def generate_activations_prelayer_batch(net,layer,images,pool_transform=None):
     activations = []
     def hook_fn(m, i, o):
-        activations.append(i[0])
+        activations.append(i[0].cpu())
     handle = layer.register_forward_hook(hook_fn)
     if pool_transform is not None:
         images = pool_transform(images)

@@ -47,6 +47,7 @@ from fastssl.data import (
     imagenet_classifier_ffcv,
 )
 #from fastssl.data.imagenet_dataloaders import get_ssltrain_imagenet_ffcv_dataloaders, get_sseval_imagenet_ffcv_dataloaders
+from fastssl.data.imagenet_dataloaders import get_ssltrain_imagenet_pytorch_dataloaders, get_ssleval_imagenet_pytorch_dataloaders
 from fastssl.models import barlow_twins as bt
 from fastssl.models import linear, byol, simclr, vicreg
 
@@ -61,6 +62,7 @@ from fastssl.utils.base import (
 from fastssl.utils.label_correction import eval_step_clean_restored
 import fastssl.utils.powerlaw as powerlaw
 from fastssl.utils.jacobian import input_jacobian
+from fastssl.utils.covariance import covariance_decomposition
 
 Section("training", "Fast CIFAR-10 training").params(
     dataset=Param(str, "dataset", default="cifar10"),
@@ -85,6 +87,7 @@ Section("training", "Fast CIFAR-10 training").params(
     model=Param(str, "model to train", default="resnet50proj"),
     num_workers=Param(int, "num of CPU workers", default=4),
     projector_dim=Param(int, "projector dimension", default=128),
+    projector_depth=Param(int, "projector MLP depth", default=2),
     hidden_dim=Param(int, "hidden dimension for BYOL projector", default=128),
     log_interval=Param(int, "log-interval in terms of epochs", default=20),
     ckpt_dir=Param(
@@ -93,6 +96,8 @@ Section("training", "Fast CIFAR-10 training").params(
     use_autocast=Param(bool, "autocast fp16", default=False),
     track_alpha=Param(bool, "Track evolution of alpha", default=False),
     track_jacobian=Param(bool, "Track input Jacobian of the last feature layer", default=False),
+    track_covariance=Param(bool, "Compute covariance decomposition", default=False),
+    covariance_nsamples(int, "Number of samples to use for estimating intra-manifold covariance", default=0),
     jacobian_bigmem=Param(bool, "Use fast memory-expensive Jacobian computation algorithm, which explicitly instantiates the Jacobian tensor", default=False),
     jacobian_batch_size=Param(int, "Batch size to use for Jacobian computation.", default=128),
     jacobian_nsamples=Param(int, "Number of training samples to use for Jacobian computation. Set to 0 to use all samples (default = 0)", default=0),
@@ -131,6 +136,7 @@ def build_dataloaders(
     num_augmentations=2,
     upscale=False,
     label_noise=0,
+    extra_augmentations=False,
 ):
     if os.path.splitext(train_dataset)[-1] == ".npy":
         # using precached features!!
@@ -150,6 +156,7 @@ def build_dataloaders(
                 num_workers,
                 num_augmentations=num_augmentations,
                 upscale=upscale,
+                extra_augmentations=extra_augmentations,
             )
         elif algorithm == "linear":
             default_linear_bsz = 512
@@ -178,6 +185,7 @@ def build_dataloaders(
                 batch_size,
                 num_workers,
                 num_augmentations=num_augmentations,
+                extra_augmentations=extra_augmentations,
             )
         elif algorithm == "linear":
             default_linear_bsz = 256
@@ -197,22 +205,33 @@ def build_dataloaders(
             raise Exception("Algorithm not implemented")
     elif dataset == "imagenet":
         if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
-            return imagenet_ffcv(
-                train_dataset,
-                val_dataset,
-                batch_size,
-                num_workers,
-                num_augmentations=num_augmentations,
-            )
+#            return imagenet_ffcv(
+#                train_dataset,
+#                val_dataset,
+#                batch_size,
+#                num_workers,
+#                num_augmentations=num_augmentations,
+#                extra_augmentations=extra_augmentations,
+#            )
+            return get_ssltrain_imagenet_pytorch_dataloaders(
+                 datadir,
+                 batch_size,
+                 num_workers,
+            )             
         elif algorithm == "linear":
             default_linear_bsz = 512
-            return imagenet_classifier_ffcv(
-                train_dataset,
-                val_dataset,
-                default_linear_bsz,
-                num_workers,
-                num_augmentations=num_augmentations,
-            )
+#            return imagenet_classifier_ffcv(
+#                train_dataset,
+#                val_dataset,
+#                default_linear_bsz,
+#                num_workers,
+#                num_augmentations=num_augmentations,
+#            )
+            return get_ssleval_imagenet_pytorch_dataloaders(
+                 datadir,
+                 default_linear_bsz,
+                 num_workers,
+             )
     else:
         raise Exception("Dataset {} not supported".format(dataset))
 
@@ -265,9 +284,10 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
         if dir_algorithm in ["ssl", "BarlowTwins"]:
             ckpt_dir = os.path.join(
                 main_dir,
-                "lambd_{:.6f}_pdim_{}{}_lr_{}_wd_{}".format(
+                "lambd_{:.6f}_pdim_{}_pdepth_{}_{}_lr_{}_wd_{}".format(
                     args.lambd,
                     args.projector_dim,
+                    args.projector_depth,
                     "_no_autocast" if not args.use_autocast else "",
                     args.lr,
                     args.weight_decay,
@@ -276,9 +296,10 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
         elif dir_algorithm in ["byol"]:
             ckpt_dir = os.path.join(
                 main_dir,
-                "tau_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}".format(
+                "tau_{:.3f}_pdim_{}_pdepth_{}_{}_bsz_{}_lr_{}_wd_{}".format(
                     args.momentum_tau,
                     args.projector_dim,
+                    args.projector_depth,
                     "_no_autocast" if not args.use_autocast else "",
                     args.batch_size,
                     args.lr,
@@ -288,9 +309,10 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
         elif dir_algorithm in ["SimCLR"]:
             ckpt_dir = os.path.join(
                 main_dir,
-                "temp_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}".format(
+                "temp_{:.3f}_pdim_{}_pdepth_{}_{}_bsz_{}_lr_{}_wd_{}".format(
                     args.temperature,
                     args.projector_dim,
+                    args.projector_depth,
                     "_no_autocast" if not args.use_autocast else "",
                     args.batch_size,
                     args.lr,
@@ -300,10 +322,11 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
         elif dir_algorithm in ["VICReg"]:
             ckpt_dir = os.path.join(
                 main_dir,
-                "lambd_{:.3f}_mu_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}".format(
+                "lambd_{:.3f}_mu_{:.3f}_pdim_{}_pdepth_{}_{}_bsz_{}_lr_{}_wd_{}".format(
                     args.lambd,
                     args.mu,
                     args.projector_dim,
+                    args.projector_depth,
                     "_no_autocast" if not args.use_autocast else "",
                     args.batch_size,
                     args.lr,
@@ -344,6 +367,7 @@ def build_model(args=None):
             "bkey": training.model,
             "dataset": training.dataset,
             "projector_dim": training.projector_dim,
+            "projector_depth": training.projector_depth,
         }
 
         if eval.jacobian_only:
@@ -482,7 +506,11 @@ def build_optimizer(model, args=None):
         if "vit" in args.model:
             warmup_epochs = 20
             def warmup(current_step: int):
-                return 1 / (10**(float(warmup_epochs - current_step)))
+                #return 1 / (10**(float(warmup_epochs - current_step)))
+                if current_step < warmup_epochs:
+                    return float((current_step +1) / warmup_epochs)
+                else:
+                    return 1
             warmup_scheduler = lr_scheduler.LambdaLR(opt, lr_lambda=warmup)
             cosine_scheduler = lr_scheduler.CosineAnnealingLR(opt, args.epochs)
             scheduler = lr_scheduler.SequentialLR(opt, [warmup_scheduler, cosine_scheduler], [warmup_epochs])
@@ -564,6 +592,9 @@ def train_step(
             # inp is a tuple with the two augmentations.
             # This is legacy implementation of ffcv for dual augmentations
             inp = ((inp[0], inp[1]), None)
+        if isinstance(inp[0], (tuple, list)):
+            inp_augs = tuple(inp[0][1:]) if len(inp[0]) > 1 else ()
+            inp = (inp[0][0], inp[1]) + inp_augs
         ## backward
         optimizer.zero_grad()
 
@@ -763,7 +794,11 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
         if label_noise > 0:
             results["feature_input_jacobian_clean"] = []
             results["feature_input_jacobian_corr"] = []
-            
+    
+    if args.track_covariance and args.algorithm != "linear":
+        results["intra_manifold_covariance"] = []
+        results["inter_manifold_covariance"] = []
+    
     if label_noise > 0 and args.algorithm == "linear":
         results.update(
             {"train_acc_1_clean": [],
@@ -1066,6 +1101,20 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
         
         if use_wandb:
             log_wandb(results, step=args.epochs +1, skip_keys=['eigenspectrum', 'base_width'])
+            
+    if args.track_covariance:
+        intra_manifold, inter_manifold = covariance_decomposition(
+            net=model,
+            layer=model.backbone.proj,
+            data_loader=loaders["train_extra"],
+            use_cuda=True,
+            max_samples=args.covariance_nsamples,
+        )
+        results["intra_manifold_covariance"].append((args.epochs, intra_manifold))
+        results["inter_manifold_covariance"].append((args.epochs, inter_manifold))
+        
+        if use_wandb:
+            log_wandb(results, step=args.epochs +1, skip_keys=['eigenspectrum', 'base_width'])
 
     return results
 
@@ -1131,7 +1180,8 @@ def run_experiment(args):
         training.num_workers,
         training.num_augmentations,
         upscale=upscale,
-        training.label_noise,
+        label_noise=training.label_noise,
+        extra_augmentations=training.track_covariance,
     )
     print("CONSTRUCTED DATA LOADERS")
     # breakpoint()

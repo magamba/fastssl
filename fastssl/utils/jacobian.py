@@ -23,6 +23,8 @@ def split_batch_gen(data_loader, batch_size, max_samples=0, label_noise=0):
     for batch_id, batch in enumerate(data_loader):
         if label_noise > 0:
             imgs, targets, ground_truths, sample_ids = batch[:4]
+            if isinstance(imgs, (tuple, list)):
+                imgs = imgs[0]
             for img, target, ground_truth, sample_id in zip(
                 torch.split(imgs, batch_size), 
                 torch.split(targets, batch_size), 
@@ -33,6 +35,9 @@ def split_batch_gen(data_loader, batch_size, max_samples=0, label_noise=0):
             
         else:
             imgs, targets = batch[:2]
+            if isinstance(imgs, (tuple, list)):
+                imgs = imgs[0]
+
             for img, target in zip(
                 torch.split(imgs, batch_size),
                 torch.split(targets, batch_size)):
@@ -395,7 +400,7 @@ def input_jacobian(net, layer, data_loader, batch_size=128, max_samples=0, use_c
             data_loader, batch_size, max_samples, label_noise
         ),
         desc="Feature Input Jacobian",
-        total = num_batches,
+        total = int(round(max_samples / batch_size)) if max_samples else num_batches,
     )
     
     if bigmem:
@@ -409,8 +414,8 @@ def input_jacobian(net, layer, data_loader, batch_size=128, max_samples=0, use_c
     
     for i, batch in enumerate(progress_bar):
         
-#        if isinstance(batch, (tuple, list)):
-#            batch = batch[0]
+        if isinstance(batch, (tuple, list)):
+            batch = batch[0]
         x = batch[0].to(device) # read input img from batch
         num_samples += x.shape[0]
         operator_norm = compute_operator_norm(x)

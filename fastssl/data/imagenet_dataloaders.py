@@ -176,6 +176,7 @@ def gen_image_label_pipeline_ffcv_ssl(
     transform_cls: ImagenetTransformFFCV = None,
     device: str = "cuda:0",
     num_augmentations: int = 2,
+    extra_augmentations: bool = False,
 ):
     """Function for generating multiple augmentations from each image.
 
@@ -252,6 +253,41 @@ def gen_image_label_pipeline_ffcv_ssl(
             pipelines={"image": image_pipeline, "label": label_pipeline},
         )
 
+    if extra_augmentations:
+        split = "train_extra"
+        num_samples = 5
+        if train_dataset is None: continue
+        image_pipeline1 = gen_image_pipeline_ffcv_ssl(
+            device=device, transform_cls=transform_cls
+        )
+        label_pipeline = gen_label_pipeline(device=device)
+        image_pipeline_augs = [
+            gen_image_pipeline_ffcv_ssl(
+                device=device, transform_cls=transform_cls
+            )
+        ] * (
+            num_augmentations - 1
+        )  # creating other augmentations
+
+        ordering = OrderOption.RANDOM  # if split == 'train' else OrderOption.SEQUENTIAL
+        # ordering = OrderOption.SEQUENTIAL #if split == 'train' else OrderOption.SEQUENTIAL
+
+        pipelines = {"image": image_pipeline1, "label": label_pipeline}
+        custom_field_img_mapper = {}
+        for i, aug_pipeline in enumerate(image_pipeline_augs):
+            pipelines["image{}".format(i + 1)] = aug_pipeline
+            custom_field_img_mapper["image{}".format(i + 1)] = "image"
+
+        loaders[split] = Loader(
+            datadir[split],
+            batch_size=batch_size,
+            num_workers=num_workers,
+            os_cache=True,
+            order=ordering,
+            drop_last=False,
+            pipelines=pipelines,
+            custom_field_mapper=custom_field_img_mapper,
+        )
     return loaders
 
 
@@ -262,6 +298,7 @@ def imagenet_ffcv(
     num_workers: int = None,
     device: str = "cuda:0",
     num_augmentations: int = 2,
+    extra_augmentations: bool = False,
 ):
     """Function to return dataloader for Imagenet-1k SSL
 
@@ -288,6 +325,7 @@ def imagenet_ffcv(
         transform_cls=transform_cls,
         device=device,
         num_augmentations=num_augmentations,
+        extra_augmentations=extra_augmentations,
     )
 
 
@@ -421,6 +459,27 @@ def get_ssltrain_imagenet_pytorch_dataloaders(
     return loaders
 
 
+ 
+def get_ssleval_imagenet_pytorch_dataloaders(
+        data_dir=None, batch_size=None, num_workers=None
+):
+    paths = {
+        'train': data_dir + '/train',
+        'test': data_dir + '/val',
+    }
+
+    loaders = {}
+    for name in ['train', 'test']:
+         dataset = torchvision.datasets.ImageFolder(paths[name], EvalTransform())
+        loader = torch.utils.data.DataLoader(
+            dataset, batch_size=batch_size, num_workers=num_workers,
+            pin_memory=True, shuffle=False, drop_last=True
+        )
+        loaders[name] = loader
+
+    return loaders
+
+
 def get_ssltrain_imagenet_pytorch_dataloaders_distributed(
         data_dir=None, batch_size=None, num_workers=None, world_size=None
 ):
@@ -481,6 +540,18 @@ class Transform:
         y1 = self.transform(x)
         y2 = self.transform_prime(x)
         return y1, y2
+
+class EvalTransform:
+    def __init__(self):
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                std=[0.229, 0.224, 0.225])
+        ])
+
+    def __call__(self, x):
+        y1 = self.transform(x)
+        return y1
 
 class TransformGPU:
     def __init__(self):

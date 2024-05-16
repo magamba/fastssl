@@ -237,6 +237,7 @@ def gen_image_label_pipeline_ffcv_ssl(
     rescale: bool = False,
     device: str = "cuda:0",
     num_augmentations: int = 2,
+    extra_augmentations: bool = False,
 ):  
     """Function for generating multiple augmentations from each image.
 
@@ -313,7 +314,41 @@ def gen_image_label_pipeline_ffcv_ssl(
             drop_last=False,
             pipelines={"image": image_pipeline, "label": label_pipeline},
         )
+    if extra_augmentations:
+        split = "train_extra"
+        num_augmentations = 5
+        if train_dataset is None: continue
+        image_pipeline1 = gen_image_pipeline_ffcv_ssl(
+            device=device, transform_cls=transform_cls, rescale=rescale
+        )
+        label_pipeline = gen_label_pipeline(device=device)
+        image_pipeline_augs = [
+            gen_image_pipeline_ffcv_ssl(
+                device=device, transform_cls=transform_cls, rescale=rescale
+            )
+        ] * (
+            num_augmentations - 1
+        )  # creating other augmentations
 
+        ordering = OrderOption.RANDOM  # if split == 'train' else OrderOption.SEQUENTIAL
+        # ordering = OrderOption.SEQUENTIAL #if split == 'train' else OrderOption.SEQUENTIAL
+
+        pipelines = {"image": image_pipeline1, "label": label_pipeline}
+        custom_field_img_mapper = {}
+        for i, aug_pipeline in enumerate(image_pipeline_augs):
+            pipelines["image{}".format(i + 1)] = aug_pipeline
+            custom_field_img_mapper["image{}".format(i + 1)] = "image"
+
+        loaders[split] = Loader(
+            datadir[split],
+            batch_size=batch_size,
+            num_workers=num_workers,
+            os_cache=True,
+            order=ordering,
+            drop_last=False,
+            pipelines=pipelines,
+            custom_field_mapper=custom_field_img_mapper,
+        )
     return loaders
 
 def stl_ffcv(
@@ -324,6 +359,7 @@ def stl_ffcv(
     device: str = "cuda:0",
     num_augmentations: int = 2,
     test_ffcv: bool = False,
+    extra_augmentations: bool = False,
 ):
     """Function to return dataloader for STL-10 SSL
 
@@ -345,7 +381,7 @@ def stl_ffcv(
         gen_img_label_fn = gen_image_label_pipeline_ffcv_ssl_test
     else:
         gen_img_label_fn = gen_image_label_pipeline_ffcv_ssl
-    return gen_img_label_fn(
+    kwargs = {
         train_dataset=train_dataset,
         val_dataset=val_dataset,
         batch_size=batch_size,
@@ -354,6 +390,11 @@ def stl_ffcv(
         rescale=False,
         device=device,
         num_augmentations=num_augmentations,
+    }
+    if not test_ffcv:
+        kwargs["extra_augmentations"] = extra_augmentations
+    return gen_img_label_fn(
+        **kwargs
     )
 
 def stl_classifier_ffcv(

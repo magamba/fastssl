@@ -11,14 +11,16 @@ class BackBone(nn.Module):
                  name='resnet50feat',
                  dataset='cifar10',
                  projector_dim=128,
-                 hidden_dim=128):
+                 hidden_dim=128,
+                 projector_depth=2):
         super(BackBone, self).__init__()
         self.name = name
         self.build_backbone(dataset=dataset, 
                             projector_dim=projector_dim, 
-                            hidden_dim=hidden_dim)
+                            hidden_dim=hidden_dim
+                            projector_depth=projector_depth)
 
-    def build_backbone(self, dataset='cifar10', projector_dim=128, hidden_dim=512):
+    def build_backbone(self, dataset='cifar10', projector_dim=128, hidden_dim=512, projector_depth=2):
         """
         Build backbone model.
         """
@@ -62,7 +64,7 @@ class BackBone(nn.Module):
                 self._shallowConvmod(dataset,layers=num_layers)
             self.feat_dim = 2048
         if 'proj' in self.name:
-            self.build_projector(projector_dim=projector_dim, hidden_dim=hidden_dim)
+            self.build_projector(projector_dim=projector_dim, hidden_dim=hidden_dim, projector_depth=projector_depth)
         if 'pred' in self.name:
             self.build_predictor(projector_dim=projector_dim)
 
@@ -180,13 +182,27 @@ class BackBone(nn.Module):
         self.deep_out = nn.Sequential(*deep)
 
 
-    def build_projector(self, projector_dim, hidden_dim):
-        projector = [
-            nn.Linear(self.feat_dim, hidden_dim, bias=False),
-            nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(inplace=True),
-            nn.Linear(hidden_dim, projector_dim, bias=True),
-        ]
+    def build_projector(self, projector_dim, hidden_dim, projector_depth=2):
+        assert projector_depth > 0
+        if projector_depth == 1:
+            projector = [
+                nn.Linear(self.feat_dim, projector_dim, bias=True)
+            ]
+        else:
+            projector = [
+                nn.Linear(self.feat_dim, hidden_dim, bias=False),
+                nn.BatchNorm1d(hidden_dim),
+                nn.ReLU(inplace=True),
+            ]
+            for _ in range(projector_depth -2):
+                projector += [
+                    nn.Linear(hidden_dim, hidden_dim, bias=False),
+                    nn.BatchNorm1d(hidden_dim),
+                    nn.ReLU(inplace=True),
+                ]
+            projector += [
+                nn.Linear(hidden_dim, projector_dim, bias=True),
+            ]
         self.proj = nn.Sequential(*projector)
 
     def build_predictor(self, projector_dim, use_mlp=True):
