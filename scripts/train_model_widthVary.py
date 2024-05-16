@@ -32,7 +32,6 @@ from torch.optim import Adam, SGD, lr_scheduler
 
 import torchvision
 from tqdm import tqdm
-import umap
 
 from fastargs import Section, Param
 
@@ -44,7 +43,10 @@ from fastssl.data import (
     stl10_pt,
     stl_classifier_ffcv,
     simple_dataloader,
+    imagenet_ffcv,
+    imagenet_classifier_ffcv,
 )
+#from fastssl.data.imagenet_dataloaders import get_ssltrain_imagenet_ffcv_dataloaders, get_sseval_imagenet_ffcv_dataloaders
 from fastssl.models import barlow_twins as bt
 from fastssl.models import linear, byol, simclr, vicreg
 
@@ -84,7 +86,6 @@ Section("training", "Fast CIFAR-10 training").params(
     num_workers=Param(int, "num of CPU workers", default=4),
     projector_dim=Param(int, "projector dimension", default=128),
     hidden_dim=Param(int, "hidden dimension for BYOL projector", default=128),
-    use_mlp=Param(bool, "Use MLP head for projector", default=False),
     log_interval=Param(int, "log-interval in terms of epochs", default=20),
     ckpt_dir=Param(
         str, "ckpt-dir", default="/data/krishna/research/results/0319/001/checkpoints"
@@ -92,12 +93,12 @@ Section("training", "Fast CIFAR-10 training").params(
     use_autocast=Param(bool, "autocast fp16", default=False),
     track_alpha=Param(bool, "Track evolution of alpha", default=False),
     track_jacobian=Param(bool, "Track input Jacobian of the last feature layer", default=False),
-    jacobian_only=Param(bool, "Load model weights and compute input Jacobian of the last feature layer", default=False),
-    jacobian_batch_size=Param(int, "Batch size to use for Jacobian computation (must divide training.batch_size).", default=128),
+    jacobian_bigmem=Param(bool, "Use fast memory-expensive Jacobian computation algorithm, which explicitly instantiates the Jacobian tensor", default=False),
+    jacobian_batch_size=Param(int, "Batch size to use for Jacobian computation.", default=128),
+    jacobian_nsamples=Param(int, "Number of training samples to use for Jacobian computation. Set to 0 to use all samples (default = 0)", default=0),
     precache=Param(bool, "Precache outputs of network", default=False),
     adaptive_ssl=Param(bool, "Use alpha to regularize SSL loss", default=False),
     num_augmentations=Param(int, "Number of augmentations to use per image", default=2),
-    subsample_classes=Param(bool, "Use subsampled version of a dataset, where the number of classes is reduced", default=False)
 )
 
 Section("eval", "Fast CIFAR-10 evaluation").params(
@@ -107,14 +108,9 @@ Section("eval", "Fast CIFAR-10 evaluation").params(
     num_augmentations_pretrain=Param(
         int, "Number of augmentations used for pretraining", default=2
     ),
-    subsample_classes=Param(bool, "Use subsampled version of a dataset, where the number of classes is reduced", default=False),
-    track_epoch=Param(
-        int, "Append TRACK_EPOCH to the linear evaluation filename", default=-1
-    ),
-    ssl_eval=Param(bool, "Evaluate SSL loss on the test set and exit", default=False),
+    jacobian_only=Param(bool, "Load model weights and compute input Jacobian of the last feature layer", default=False),
     ood_eval=Param(bool, "Evaluate OOD robustness on test set and exit", default=False),
     ood_noise_type=Param(str, "OOD noise type", default=""),
-    umap_vis=Param(bool, "Fit UMAP visualization to learned features", default=False),
 )
 
 Section("logging", "Fast CIFAR-10 logging options").params(
@@ -133,6 +129,7 @@ def build_dataloaders(
     batch_size=128,
     num_workers=2,
     num_augmentations=2,
+    upscale=False,
     label_noise=0,
 ):
     if os.path.splitext(train_dataset)[-1] == ".npy":
@@ -152,6 +149,7 @@ def build_dataloaders(
                 batch_size,
                 num_workers,
                 num_augmentations=num_augmentations,
+                upscale=upscale,
             )
         elif algorithm == "linear":
             default_linear_bsz = 512
@@ -162,6 +160,7 @@ def build_dataloaders(
                 default_linear_bsz,
                 num_workers,
                 num_augmentations=num_augmentations,
+                upscale=upscale,
                 label_noise=label_noise,
             )
         else:
@@ -196,6 +195,24 @@ def build_dataloaders(
             # num_workers=num_workers)
         else:
             raise Exception("Algorithm not implemented")
+    elif dataset == "imagenet":
+        if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
+            return imagenet_ffcv(
+                train_dataset,
+                val_dataset,
+                batch_size,
+                num_workers,
+                num_augmentations=num_augmentations,
+            )
+        elif algorithm == "linear":
+            default_linear_bsz = 512
+            return imagenet_classifier_ffcv(
+                train_dataset,
+                val_dataset,
+                default_linear_bsz,
+                num_workers,
+                num_augmentations=num_augmentations,
+            )
     else:
         raise Exception("Dataset {} not supported".format(dataset))
 
@@ -299,9 +316,6 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
             ckpt_dir = os.path.join(
                 ckpt_dir, "{}_augs_eval".format(args.num_augmentations)
             )
-            if eval_args.track_epoch >= 0:
-                ckpt_dir = "{}_epoch_{}".format(ckpt_dir, eval_args.track_epoch)
-
         # create ckpt file name
         ckpt_path = os.path.join(
             ckpt_dir,
@@ -331,6 +345,10 @@ def build_model(args=None):
             "dataset": training.dataset,
             "projector_dim": training.projector_dim,
         }
+
+        if eval.jacobian_only:
+            ckpt_path = gen_ckpt_path(training, eval, epoch=args.training.epoch)
+            model_args["ckpt_path"] = ckpt_path
 
         if training.algorithm in ("byol"):
             model_args["hidden_dim"] = training.hidden_dim
@@ -370,13 +388,28 @@ def build_model(args=None):
                 except:
                     base_width = 64
                 feat_dim = 32*base_width
+            if "vit" in training.model:
+                try:
+                    assert len(training.model.split('_width'))>1
+                    base_width = int(training.model.split('_width')[-1])
+                except:
+                    base_width = 64
+                if "vitt" in training.model:
+                    num_heads = 3
+                elif "vits" in training.model:
+                    num_heads = 4
+                elif "vit" in training.model:
+                    num_heads = 6
+                else:
+                    num_heads = 8
+                feat_dim = num_heads*base_width
             else:
                 feat_dim = 2048
         
-        if eval.subsample_classes:
-            num_classes = 2
-        elif training.dataset in ["cifar10", "stl10"]:
+        if training.dataset in ["cifar10", "stl10"]:
             num_classes = 10
+        elif "imagenet" in training.dataset:
+            num_classes = 1000
         else:
             num_classes = 100
         
@@ -394,7 +427,7 @@ def build_model(args=None):
         model_cls = linear.LinearClassifier
 
     model = model_cls(**model_args)
-    if eval.ssl_eval or eval.ood_eval:
+    if eval.ood_eval:
         ckpt_path = gen_ckpt_path(training, eval, epoch=args.training.epochs)
         model.load_state_dict(
             torch.load(ckpt_path, map_location="cpu")["model"]
@@ -405,7 +438,7 @@ def build_model(args=None):
 
 def build_loss_fn(args=None):
     if args.algorithm in ("BarlowTwins", "ssl"):
-        return partial(bt.BarlowTwinLoss, _lambda=args.lambd, split=args.subsample_classes)
+        return partial(bt.BarlowTwinLoss, _lambda=args.lambd)
     elif args.algorithm == "byol":
         return byol.BYOLLoss
     elif args.algorithm == "SimCLR":
@@ -446,22 +479,19 @@ def build_optimizer(model, args=None):
     scheduler = None
     if args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
         opt = Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        if "vit" in args.model:
+            warmup_epochs = 20
+            def warmup(current_step: int):
+                return 1 / (10**(float(warmup_epochs - current_step)))
+            warmup_scheduler = lr_scheduler.LambdaLR(opt, lr_lambda=warmup)
+            cosine_scheduler = lr_scheduler.CosineAnnealingLR(opt, args.epochs)
+            scheduler = lr_scheduler.SequentialLR(opt, [warmup_scheduler, cosine_scheduler], [warmup_epochs])
 #    elif args.algorithm == "linear":
 #        default_lr = 1e-3
 #        default_weight_decay = 1e-6
 #        return Adam(
 #            model.parameters(), lr=default_lr, weight_decay=default_weight_decay
 #        )
-#    elif args.algorithm in ("SimCLR",):
-#        default_lr = args.lr
-#        default_weight_decay = args.weight_decay
-#        warmup_epochs = 10
-##        opt = SGD(model.parameters(), lr=default_lr / 10., weight_decay=default_weight_decay)
-#        opt = SGD(model.parameters(), lr=default_lr, weight_decay=default_weight_decay, momentum=0.9)
-#        warmup_lambda = lambda epoch: float(epoch) / float(warmup_epochs) if epoch > 0 else 1. / float(warmup_epochs)
-#        warmup_scheduler = lr_scheduler.LambdaLR(opt, lr_lambda=warmup_lambda)
-#        cosine_scheduler = lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
-#        scheduler = lr_scheduler.SequentialLR(opt, [warmup_scheduler, cosine_scheduler], [warmup_epochs])
     elif args.algorithm == "linear":
         default_lr = 1e-1
         default_weight_decay = 0
@@ -509,7 +539,6 @@ def train_step(
     """
 
     total_loss, total_num, num_batches = 0.0, 0, 0
-    total_loss_on_diag, total_loss_off_diag = 0., 0.
 
     ## setup dataloader + tqdm
     train_bar = tqdm(dataloader, desc="Train")
@@ -547,27 +576,17 @@ def train_step(
                     loss = loss_fn(model, inp)
                 else:
                     raise Exception("Algorithm not implemented")
-            
-            if args.subsample_classes and args.algorithm == "ssl":
-                loss, loss_on_diag, loss_off_diag = loss[0], loss[1], loss[2]
-                
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
         else:
             loss = loss_fn(model, inp)
-            if args.subsample_classes and args.algorithm == "ssl":
-                loss, loss_on_diag, loss_off_diag = loss[0], loss[1], loss[2]
             loss.backward()
             optimizer.step()
 
         ## update loss
         total_loss += loss.item()
         num_batches += 1
-        
-        if args.subsample_classes and args.algorithm == "ssl":
-            total_loss_on_diag += loss_on_diag.item()
-            total_loss_off_diag += loss_off_diag.item()
 
         if args.algorithm == "byol":
             byol.update_state_dict(target_model, model.state_dict(), args.momentum_tau)
@@ -576,24 +595,13 @@ def train_step(
         # if ray.tune.is_session_enabled():
         #     tune.report(epoch=epoch, loss=total_loss/num_batches)
         lr = optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0]
-        if args.subsample_classes and args.algorithm == "ssl":
-            train_bar.set_description(
-                "Train Epoch: [{}/{}] Lr: {:.4f} Loss: {:.4f} On diag: {:.4f} Off diag: {:.4f}".format(
-                    epoch, args.epochs, lr, total_loss / num_batches, total_loss_on_diag / num_batches, total_loss_off_diag / num_batches
-                )
+        train_bar.set_description(
+            "Train Epoch: [{}/{}] Lr: {:.4f} Loss: {:.4f}".format(
+                epoch, args.epochs, lr, total_loss / num_batches
             )
-        else:
-            train_bar.set_description(
-                "Train Epoch: [{}/{}] Lr: {:.4f} Loss: {:.4f}".format(
-                    epoch, args.epochs, lr, total_loss / num_batches
-                )
-            )
-
+        )
     if scheduler is not None:
         scheduler.step()
-    
-    if args.subsample_classes and args.algorithm == "ssl":
-        return (total_loss / num_batches, total_loss_on_diag / num_batches, total_loss_off_diag / num_batches)
     return total_loss / num_batches
 
 
@@ -630,90 +638,6 @@ def eval_step(model, dataloader, epoch=None, epochs=None):
             )
         )
     return acc_1, acc_5
-
-
-def ssl_eval_step(
-    model,
-    dataloader,
-    args,
-    loss_fn,
-    target_model=None,
-    epoch=None,
-):
-    """
-    Evaluate SSL loss on the test set
-
-    Args:
-        model :
-        target_model: Not None if BYOL
-        dataloader :
-        loss_fn:
-    """
-
-    total_loss, total_num, num_batches = 0.0, 0, 0
-    total_loss_on_diag, total_loss_off_diag = 0., 0.
-
-    ## setup dataloader + tqdm
-    train_bar = tqdm(dataloader, desc="SSL validation loss")
-
-    ## set model in eval mode
-    model.eval()
-
-    # for inp in dataloader:
-    for inp in train_bar:
-        if type(inp[0]) == type(inp[1]) and inp[0].shape == inp[1].shape:
-            # inp is a tuple with the two augmentations.
-            # This is legacy implementation of ffcv for dual augmentations
-            inp = ((inp[0], inp[1]), None)
-
-        ## forward
-        if args.use_autocast:
-            with autocast():
-                if args.algorithm == "byol":
-                    loss = loss_fn(model, target_model, inp)
-                elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear", "VICReg"):
-                    loss = loss_fn(model, inp)
-                else:
-                    raise Exception("Algorithm not implemented")
-            
-            if args.subsample_classes and args.algorithm == "ssl":
-                loss, loss_on_diag, loss_off_diag = loss[0], loss[1], loss[2]
-                
-        else:
-            if args.algorithm == "byol":
-                loss = loss_fn(model, target_model, inp)
-            elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear", "VICReg"):
-                loss = loss_fn(model, inp)
-            else:
-                raise Exception("Algorithm not implemented")
-            
-            if args.subsample_classes and args.algorithm == "ssl":
-                loss, loss_on_diag, loss_off_diag = loss[0], loss[1], loss[2]
-
-        ## update loss
-        total_loss += loss.item()
-        num_batches += 1
-        
-        if args.subsample_classes and args.algorithm == "ssl":
-            total_loss_on_diag += loss_on_diag.item()
-            total_loss_off_diag += loss_off_diag.item()
-
-        if args.subsample_classes and args.algorithm == "ssl":
-            train_bar.set_description(
-                "SSL validation: [{}/{}] Loss: {:.4f} On diag: {:.4f} Off diag: {:.4f}".format(
-                    epoch, args.epochs, total_loss / num_batches, total_loss_on_diag / num_batches, total_loss_off_diag / num_batches
-                )
-            )
-        else:
-            train_bar.set_description(
-                "SSL validation: [{}/{}] Loss: {:.4f}".format(
-                    epoch, args.epochs, total_loss / num_batches
-                )
-            )
-
-    if args.subsample_classes and args.algorithm == "ssl":
-        return (total_loss / num_batches, total_loss_on_diag / num_batches, total_loss_off_diag / num_batches)
-    return total_loss / num_batches
 
 
 def debug_plot(activations_eigen, alpha, ypred, R2, R2_100, figname):
@@ -851,13 +775,6 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             }
         )
 
-    if args.subsample_classes and args.algorithm != "linear":
-        results.update(
-            {"train_loss_on_diag": [],
-             "train_loss_off_diag": [],
-            }
-        )
-
     if args.algorithm == "linear":
         if args.use_autocast:
             activations = powerlaw.generate_activations_prelayer_torch(
@@ -910,9 +827,11 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             jacobian, jacobian_clean, jacobian_corr = input_jacobian(
                 net=model,
                 layer=None,
-                data_loader=loaders["train"], 
-                batch_size=args.jacobian_batch_size, 
-                use_cuda=True, 
+                data_loader=loaders["train"],
+                batch_size=args.jacobian_batch_size,
+                use_cuda=True,
+                max_samples=args.jacobian_nsamples,
+                bigmem=args.jacobian_bigmem,
                 label_noise=label_noise,
             )
             results["feature_input_jacobian"] = [jacobian]
@@ -974,14 +893,16 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 del activations
                 print("Initial alpha", results["alpha"])
             
-            if args.track_jacobian:
+            if args.track_jacobian and args.jacobian_bigmem:
                 # compute Jacobian before training starts!
                 jacobian, jacobian_clean, jacobian_corr = input_jacobian(
                     net=model,
                     layer=None if args.algorithm == "linear" else model.backbone.proj,
-                    data_loader=loaders["train"], 
-                    batch_size=args.jacobian_batch_size, 
-                    use_cuda=True, 
+                    data_loader=loaders["train"],
+                    batch_size=args.jacobian_batch_size,
+                    use_cuda=True,
+                    max_samples=args.jacobian_nsamples,
+                    bigmem=args.jacobian_bigmem,
                     label_noise=label_noise,
                 )
                 results["feature_input_jacobian"].append((epoch -1, jacobian))
@@ -1001,11 +922,6 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             scheduler=scheduler,
             label_noise=label_noise,
         )
-        
-        if args.subsample_classes and args.algorithm != "linear":
-            train_loss, train_loss_on_diag, train_loss_off_diag = train_loss[0], train_loss[1], train_loss[2]
-            results["train_loss_on_diag"].append(train_loss_on_diag)
-            results["train_loss_off_diag"].append(train_loss_off_diag)
 
         results["train_loss"].append(train_loss)
         
@@ -1035,14 +951,16 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             results["lr"].append(
                 optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0]
             )
-            if args.track_jacobian and epoch % args.log_interval == 0:
+            if args.track_jacobian and args.jacobian_bigmem and epoch % args.log_interval == 0:
                 # compute Jacobian before training starts!
                 jacobian, jacobian_clean, jacobian_corr = input_jacobian(
                     net=model,
                     layer=None,
-                    data_loader=loaders["train"], 
-                    batch_size=args.jacobian_batch_size, 
-                    use_cuda=True, 
+                    data_loader=loaders["train"],
+                    batch_size=args.jacobian_batch_size,
+                    use_cuda=True,
+                    max_samples=args.jacobian_nsamples,
+                    bigmem=args.jacobian_bigmem,
                     label_noise=label_noise,
                 )
                 results["feature_input_jacobian"].append((epoch, jacobian))
@@ -1064,18 +982,17 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 torch.save(state, ckpt_path)
 
         elif epoch % args.log_interval == 0:
-            if not eval_args.subsample_classes or epoch == args.epochs:
-                ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch, suffix='pt')
-                state = dict(
-                    epoch=epoch + 1,
-                    model=model.state_dict(),
-                    optimizer=optimizer.state_dict(),
-                )
-                if scheduler is not None:
-                    state["scheduler"] = scheduler.state_dict()
-                torch.save(state, ckpt_path)
-                ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch)
-                torch.save(state, ckpt_path)
+            ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch, suffix='pt')
+            state = dict(
+                epoch=epoch + 1,
+                model=model.state_dict(),
+                optimizer=optimizer.state_dict(),
+            )
+            if scheduler is not None:
+                state["scheduler"] = scheduler.state_dict()
+            torch.save(state, ckpt_path)
+            ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch)
+            torch.save(state, ckpt_path)
             if args.track_alpha:
                 # compute alpha at intermediate training steps
                 activations = powerlaw.generate_activations_prelayer_torch(
@@ -1122,6 +1039,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 results["rankme"].append((epoch, rk))
                 # print(results['alpha'])
 
+        # logging base width as float to enable model-wise line plots in wandb
         results['base_width'] = float(str(args.model).split("_")[1].replace("width", ""))
         if use_wandb:
             if epoch == 1:
@@ -1130,13 +1048,15 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 log_wandb(results, step=epoch, skip_keys=['eigenspectrum', 'base_width'])
     
     if args.track_jacobian and args.algorithm != "linear":
-        # compute Jacobian before training starts!
+        # compute Jacobian at the end of pretraining!
         jacobian, jacobian_clean, jacobian_corr = input_jacobian(
             net=model,
             layer=model.backbone.proj,
-            data_loader=loaders["train"], 
-            batch_size=args.jacobian_batch_size, 
-            use_cuda=True, 
+            data_loader=loaders["train"],
+            batch_size=args.jacobian_batch_size,
+            use_cuda=True,
+            max_samples=args.jacobian_nsamples,
+            bigmem=args.jacobian_bigmem,
             label_noise=label_noise,
         )
         results["feature_input_jacobian"].append((args.epochs, jacobian))
@@ -1145,7 +1065,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             results["feature_input_jacobian_corr"].append((args.epochs, jacobian_corr))
         
         if use_wandb:
-            log_wandb(results, step=args.epochs, skip_keys=['eigenspectrum', 'base_width'])
+            log_wandb(results, step=args.epochs +1, skip_keys=['eigenspectrum', 'base_width'])
 
     return results
 
@@ -1200,6 +1120,7 @@ def run_experiment(args):
     if eval.use_precache:
         search_precache_file(training, eval)
     ## Use FFCV to build dataloaders
+    upscale = "imagenet" not in training.dataset and "vit" in training.model
     loaders = build_dataloaders(
         training.dataset,
         training.algorithm,
@@ -1209,6 +1130,7 @@ def run_experiment(args):
         training.batch_size,
         training.num_workers,
         training.num_augmentations,
+        upscale=upscale,
         training.label_noise,
     )
     print("CONSTRUCTED DATA LOADERS")
@@ -1228,21 +1150,6 @@ def run_experiment(args):
         # removing the final linear readout layer
         model._modules["fc"] = torch.nn.Identity()
         results = precache_outputs(model, loaders, training, eval)
-        
-        if eval.umap_vis:
-            for split in results.keys():
-                fit = umap.UMAP(
-                    n_neighbors=70,
-                    min_dist=0.5,
-                    n_components=2,
-                    metric='euclidean',
-                    random_state=42,
-                )
-                print(f"Fitting UMAP to {split} split")
-                u = fit.fit_transform(results[split]["activations"])
-        
-                results[split]["umap"] = u.tolist()
-                
         # now we save the results to npy file!
         save_path = gen_ckpt_path(
             training,
@@ -1262,6 +1169,8 @@ def run_experiment(args):
             data_loader=loaders["train"], 
             batch_size=args.jacobian_batch_size, 
             use_cuda=True, 
+            max_samples=args.jacobian_nsamples,
+            bigmem=args.jacobian_bigmem,
             label_noise=label_noise,
         )
         results["feature_input_jacobian"] = [jacobian]
@@ -1277,45 +1186,6 @@ def run_experiment(args):
             eval,
             training.epochs,
             "results_{}_jacobian".format(training.dataset),
-            "npy",
-        )
-        np.save(save_path, results)
-    elif eval.ssl_eval:
-        print("Evaluating SSL loss using the test set")
-        results = {
-            "test_loss": [],
-            "test_loss_on_diag": [],
-            "test_loss_off_diag": [],
-        }
-        
-        loss_fn = build_loss_fn(training)
-        print("CONSTRUCTED LOSS FUNCTION")
-        
-        eval_loss = ssl_eval_step(
-            model=model,
-            dataloader=loaders["train"],
-            args=training,
-            loss_fn=loss_fn,
-            target_model=target_model if training.algorithm == "byol" else None,
-            epoch=training.epochs,
-        )
-        
-        if training.subsample_classes and training.algorithm != "linear":
-            eval_loss, eval_loss_on_diag, eval_loss_off_diag = eval_loss[0], eval_loss[1], eval_loss[2]
-            results["test_loss_on_diag"].append(eval_loss_on_diag)
-            results["test_loss_off_diag"].append(eval_loss_off_diag)
-
-        results["test_loss"].append(eval_loss)
-        
-        
-        if args.logging.use_wandb:
-            log_wandb(results, step=training.epochs)
-            
-        save_path = gen_ckpt_path(
-            training,
-            eval,
-            training.epochs,
-            "results_{}_ssl_eval".format(training.dataset),
             "npy",
         )
         np.save(save_path, results)
