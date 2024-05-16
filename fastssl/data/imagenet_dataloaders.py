@@ -253,10 +253,9 @@ def gen_image_label_pipeline_ffcv_ssl(
             pipelines={"image": image_pipeline, "label": label_pipeline},
         )
 
-    if extra_augmentations:
+    if extra_augmentations and train_dataset is not None:
         split = "train_extra"
         num_samples = 5
-        if train_dataset is None: continue
         image_pipeline1 = gen_image_pipeline_ffcv_ssl(
             device=device, transform_cls=transform_cls
         )
@@ -470,7 +469,7 @@ def get_ssleval_imagenet_pytorch_dataloaders(
 
     loaders = {}
     for name in ['train', 'test']:
-         dataset = torchvision.datasets.ImageFolder(paths[name], EvalTransform())
+        dataset = torchvision.datasets.ImageFolder(paths[name], EvalTransform())
         loader = torch.utils.data.DataLoader(
             dataset, batch_size=batch_size, num_workers=num_workers,
             pin_memory=True, shuffle=False, drop_last=True

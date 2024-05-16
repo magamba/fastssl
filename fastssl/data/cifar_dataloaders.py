@@ -347,10 +347,9 @@ def gen_image_label_pipeline_ffcv_ssl(
             pipelines={"image": image_pipeline, "label": label_pipeline},
         )
 
-    if extra_augmentations:
+    if extra_augmentations and train_dataset is not None:
         split = "train_extra"
         num_augmentations = 5
-        if train_dataset is None: continue
         image_pipeline1 = gen_image_pipeline_ffcv_ssl(
             device=device, transform_cls=transform_cls, rescale=rescale
         )

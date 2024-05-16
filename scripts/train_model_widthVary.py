@@ -97,7 +97,7 @@ Section("training", "Fast CIFAR-10 training").params(
     track_alpha=Param(bool, "Track evolution of alpha", default=False),
     track_jacobian=Param(bool, "Track input Jacobian of the last feature layer", default=False),
     track_covariance=Param(bool, "Compute covariance decomposition", default=False),
-    covariance_nsamples(int, "Number of samples to use for estimating intra-manifold covariance", default=0),
+    covariance_nsamples=Param(int, "Number of samples to use for estimating intra-manifold covariance", default=0),
     jacobian_bigmem=Param(bool, "Use fast memory-expensive Jacobian computation algorithm, which explicitly instantiates the Jacobian tensor", default=False),
     jacobian_batch_size=Param(int, "Batch size to use for Jacobian computation.", default=128),
     jacobian_nsamples=Param(int, "Number of training samples to use for Jacobian computation. Set to 0 to use all samples (default = 0)", default=0),

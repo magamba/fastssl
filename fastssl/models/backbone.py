@@ -15,9 +15,9 @@ class BackBone(nn.Module):
                  projector_depth=2):
         super(BackBone, self).__init__()
         self.name = name
-        self.build_backbone(dataset=dataset, 
-                            projector_dim=projector_dim, 
-                            hidden_dim=hidden_dim
+        self.build_backbone(dataset=dataset,
+                            projector_dim=projector_dim,
+                            hidden_dim=hidden_dim,
                             projector_depth=projector_depth)
 
     def build_backbone(self, dataset='cifar10', projector_dim=128, hidden_dim=512, projector_depth=2):

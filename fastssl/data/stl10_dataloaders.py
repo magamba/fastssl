@@ -314,10 +314,9 @@ def gen_image_label_pipeline_ffcv_ssl(
             drop_last=False,
             pipelines={"image": image_pipeline, "label": label_pipeline},
         )
-    if extra_augmentations:
+    if extra_augmentations and train_dataset is not None:
         split = "train_extra"
         num_augmentations = 5
-        if train_dataset is None: continue
         image_pipeline1 = gen_image_pipeline_ffcv_ssl(
             device=device, transform_cls=transform_cls, rescale=rescale
         )
@@ -382,14 +381,14 @@ def stl_ffcv(
     else:
         gen_img_label_fn = gen_image_label_pipeline_ffcv_ssl
     kwargs = {
-        train_dataset=train_dataset,
-        val_dataset=val_dataset,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        transform_cls=transform_cls,
-        rescale=False,
-        device=device,
-        num_augmentations=num_augmentations,
+        "train_dataset": train_dataset,
+        "val_dataset": val_dataset,
+        "batch_size": batch_size,
+        "num_workers": num_workers,
+        "transform_cls": transform_cls,
+        "rescale": False,
+        "device": device,
+        "num_augmentations": num_augmentations,
     }
     if not test_ffcv:
         kwargs["extra_augmentations"] = extra_augmentations
