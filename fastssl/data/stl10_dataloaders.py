@@ -106,11 +106,12 @@ def gen_image_label_pipeline(
     num_workers: int = None,
     transform_cls: STLClassifierTransform = None,
     rescale: bool = False,
-    device: str = 'cuda:0',
+    device: str = "cuda:0",
     num_augmentations: int = 1,
+    transform_cls_augs: STLTransformFFCV = None,
     label_noise: int = 0
     ):
-    """
+    """Generate image and label pipelines for supervised classification.
     Args:
         train_dataset (str, optional): path to train dataset. Defaults to None.
         val_dataset (str, optional): path to test dataset. Defaults to None.
@@ -122,15 +123,13 @@ def gen_image_label_pipeline(
         num_augmentations (int, optional): Number of total image augmentations. Defaults to 1.
         transform_cls_augs (STLTransformFFCV, optional): Transforms to be applied to generate other augmentations. Defaults to None.
         label_noise (int, optional): Ratio (percentage) of label noise (int from 0 to 100)
-    Returns
-        loaders       : dict('train': dataloader, 'test': dataloader)
+    Returns:
+        loaders : dict('train': dataloader, 'test': dataloader)
     """
 
-    datadir = {
-        'train': train_dataset,
-        'test': val_dataset
-    }
-
+    datadir = {'train': train_dataset, 'test': val_dataset}
+    assert num_augmentations > 0, "Please use at least 1 augmentation for classifier."
+    
     loaders = {}
 
     for split in ['train', 'test']:
@@ -238,15 +237,21 @@ def gen_image_label_pipeline_ffcv_ssl(
     rescale: bool = False,
     device: str = "cuda:0",
     num_augmentations: int = 2,
-):
-    """
+):  
+    """Function for generating multiple augmentations from each image.
+
     Args:
-        train_dataset : path to train dataset
-        val_dataset   : path to test dataset
-        batch_size    : batch-size
-        num_workers   : number of workers
-    Returns
-        loaders       : dict('train': dataloader, 'test': dataloader)
+        train_dataset (str, optional): Train dataset filename. Defaults to None.
+        val_dataset (str, optional): Test dataset filename. Defaults to None.
+        batch_size (int, optional): Batch size. Defaults to None.
+        num_workers (int, optional): Number of CPU workers. Defaults to None.
+        transform_cls (STLTransformFFCV, optional): Transform object. Defaults to None.
+        rescale (bool, optional): Flag to rescale pixel vals to [0,1]. Defaults to False.
+        device (_type_, optional): CPU/GPU. Defaults to 'cuda:0'.
+        num_augmentations (int, optional): Number of patches. Defaults to 2.
+
+    Returns:
+        loaders: dict('train': dataloader, 'test': dataloader)
     """
 
     datadir = {"train": train_dataset, "test": val_dataset}
