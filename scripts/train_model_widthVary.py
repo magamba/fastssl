@@ -669,6 +669,57 @@ def eval_step(model, dataloader, epoch=None, epochs=None):
             )
         )
     return acc_1, acc_5
+    
+
+def ood_eval(model, dataloader, epoch=None, epochs=None):
+    """ OOD evaluation for CIFAR-C dataset
+        The dataset contains 50k samples, divided into blocks of 10k samples
+        each corrupted with increasing intensity.
+    """
+    model.eval()
+
+    corr_strengths = 5 # CIFAR-C uses 5 corruption strengths
+    total_correct_1 = []
+    total_correct_5 = []
+    total_samples = 0
+    test_bar = tqdm(dataloader, desc="Test")
+
+    for inp in test_bar:
+        # for data, target in test_bar:
+        inp = list(inp)
+        # WARNING: every epoch could have different augmentations of images
+        target = inp.pop(1)
+        for x in inp:
+            x = x.cuda(non_blocking=True)
+        target = target.cuda(non_blocking=True)
+        total_samples += inp[0].shape[0]
+        # total_samples += data.shape[0]
+        # data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
+        with autocast():
+            logits = model(inp)
+            preds = torch.argsort(logits, dim=1, descending=True)
+            total_correct_1.append(
+                (preds[:, 0:1] == target[:, None]).any(dim=-1).float()
+            )
+            total_correct_5.append(
+                (preds[:, 0:5] == target[:, None]).any(dim=-1).float()
+            )
+
+        acc_1 = total_correct_1.sum().item() / total_samples * 100
+        acc_5 = total_correct_5.sum().item() / total_samples * 100
+        test_bar.set_description(
+            "{} Epoch: [{}/{}] ACC@1: {:.2f}% ACC@5: {:.2f}%".format(
+                "Test", epoch, epochs, acc_1, acc_5
+            )
+        )
+
+    samples_per_strength = total_samples // corr_strengths
+    total_correct_1 = torch.cat(total_correct_1).reshape(corr_strengths, -1)
+    total_correct_5 = torch.cat(total_correct_5).reshape(corr_strengths, -1)
+    
+    acc_1 = total_correct_1.sum(dim=-1).numpy() / samples_per_strength
+    acc_5 = total_correct_5.sum(dim=-1).numpy() / samples_per_strength
+    return acc_1, acc_5
 
 
 def debug_plot(activations_eigen, alpha, ypred, R2, R2_100, figname):
@@ -1249,7 +1300,7 @@ def run_experiment(args):
         loss_fn = build_loss_fn(training)
         print("CONSTRUCTED LOSS FUNCTION")
         
-        acc_1, acc_5 = eval_step(
+        acc_1, acc_5 = ood_eval(
             model=model,
             dataloader=loaders["test"],
             epoch=training.epochs,
