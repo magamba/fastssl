@@ -30,13 +30,12 @@ def covariance_decomposition(net, layer, data_loader, use_cuda=False, max_sample
 
 
 def generate_activations_prelayer_torch(net,layer,data_loader,use_cuda=False,max_samples=0):
-    batch_ = next(iter(data_loader))
-    num_augs = len(batch_) -1
-    batch_size = batch_[0].shape[0]
+    num_augs = len(next(iter(data_loader))) -1
+    ndims = np.prod(batch_[0][1:])
     
     activations = []
     def hook_fn(m,i,o):
-        activations.append(i[0].reshape(batch_size, num_augs, -1).cpu())
+        activations.append(i[0].reshape(-1, num_augs, ndims).cpu())
     handle = layer.register_forward_hook(hook_fn)
 
     if use_cuda:
