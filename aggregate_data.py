@@ -569,6 +569,223 @@ def aggregate_data(destdir=plots_path):
         json.dump(figure3_data, fp, allow_nan=False)
 
 
+""" Figure 5
+
+    SSL pretraining: alpha, feature jacobian, effective rank
+    
+    algorithms: barlow_twins, byol, simclr, vicreg
+    models: resnet18
+    datasets: cifar10, stl10
+    epoch: 100 (barlow_twins), 300 (byol), 100 (simclr), 100 (vicreg)
+    
+    train_configs: ssl, linear
+    widths
+    seeds
+    noise configs
+    metrics
+"""
+
+figure5_conf = {
+    "algorithms": ["barlow_twins", "simclr", "vicreg"],
+    "base_models": ["vit"], #"vitt", "vits", "vit"],
+    "num_heads": {
+        "vitt": [3],
+        "vits": [4],
+        "vit": [6],
+    },
+    "widths": {
+        "barlow_twins": {
+            "cifar10": list(range(1,65)),
+        },
+        "simclr": {
+            "cifar10": list(range(1,65)),
+        },
+        "vicreg" : {
+            "cifar10": list(range(1,65)),
+        },
+    },
+    "seeds" : [0, 1, 2],
+    "epochs": {
+        "barlow_twins": 100,
+        "simclr": 100,
+        "vicreg": 100,
+    },
+    "noise_configs": [0, 5, 10, 15, 20, 40, 60, 80, 100],
+    "datasets": ["cifar10",],
+    "performance_metrics": ["train_acc_1", "train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored", "test_acc_1"],
+    "metrics": ["train_loss", "alpha", "feature_input_jacobian",],
+}
+
+figure5_conf.update({
+    "filenames": {
+        "barlow_twins": {
+            dataset: {
+                width: [ f"{root_dir}_barlow_twins-{dataset}/{base_model}_width{width}/2_augs/lambd_0.005000_pdim_{num_heads * width}_lr_0.001_wd_1e-05/results_{dataset}_alpha_ssl_100_seed_{seed}.npy"  for seed in figure5_conf["seeds"] ] for width in figure5_conf["widths"]["barlow_twins"][dataset] for base_model in figure5_conf["base_models"] for num_heads in figure5_conf["num_heads"][base_model]
+            } for dataset in figure5_conf["datasets"]
+        },
+        "simclr": {
+            "cifar10": {
+                width: [ f"{root_dir}_simclr-cifar10/{base_model}_width{width}/2_augs/temp_0.100_pdim_{num_heads * width}_bsz_512_lr_0.001_wd_1e-05/results_cifar10_alpha_SimCLR_100_seed_{seed}.npy"  for seed in figure5_conf["seeds"] ] for width in figure5_conf["widths"]["simclr"]["cifar10"] for base_model in figure5_conf["base_models"] for num_heads in figure5_conf["num_heads"][base_model]
+            },
+        },
+        "vicreg": {
+            "cifar10": {
+                width: [ f"{root_dir}_vicreg-cifar10/{base_model}_width{width}/2_augs/lambd_25.000_mu_25.000_pdim_{num_heads * width}_bsz_512_lr_0.001_wd_1e-05/results_cifar10_alpha_VICReg_100_seed_{seed}.npy"  for seed in figure5_conf["seeds"] ] for width in figure5_conf["widths"]["vicreg"]["cifar10"] for base_model in figure5_conf["base_models"] for num_heads in figure5_conf["num_heads"][base_model]
+            },
+        },
+    },
+})
+
+missing_runs = []
+def aggregate_data(destdir=plots_path):
+    """ Aggregate results for figure 5
+    """
+    nseeds = len(figure5_conf["seeds"])
+    nmetrics = len(figure5_conf["metrics"])
+    nnoise = len(figure5_conf["noise_configs"])
+    figure5_data = figure5_conf
+
+    plot_data = {}
+    for algorithm in figure5_conf["algorithms"]:
+        plot_data[algorithm] = {}
+        for dataset in figure5_conf["datasets"]:
+            plot_data[algorithm][dataset] = {}
+            nwidths = len(figure5_conf["widths"][algorithm][dataset])
+            for base_model in figure5_conf["base_models"]:
+                plot_data[algorithm][dataset][base_model] = np.zeros((nwidths, nmetrics, nseeds))
+                for w_id, width in enumerate(figure5_conf["widths"][algorithm][dataset]):
+                    for s_id in range(nseeds):
+                        fname = figure5_conf["filenames"][algorithm][dataset][width][s_id]
+                        logger.info(f"Loading {fname}")
+                        try:
+                            stats = np.load(
+                                fname,
+                                allow_pickle=True
+                            ).tolist()
+                            for m_id, metric in enumerate(figure5_conf["metrics"]):
+                                epoch = figure5_conf["epochs"][algorithm]
+                                logger.info(f"Parsing {base_model}_{width} epoch {epoch} {metric} seed {s_id}")
+                                plot_data[algorithm][dataset][base_model][w_id, m_id, s_id] = parse_stats(fname, stats, metric, epoch)
+                                
+                        except FileNotFoundError:
+                            logger.info(f"File not found: {fname}")
+                            missing_runs.append(fname)
+                            
+                plot_data[algorithm][dataset][base_model] = \
+                    plot_data[algorithm][dataset][base_model].tolist()
+        
+    figure5_data.pop("filenames")
+    figure5_data["plot_data"] = plot_data
+    
+    if len(missing_runs) > 0:
+        logger.info("The following files were missing:")
+        for f in missing_runs:
+            logger.info(f)
+
+    filename = os.path.join(destdir, 'plot_data.json')
+    logger.info(f"Saving plot data to {filename}")
+    with open(filename, 'w') as fp:
+        json.dump(figure5_data, fp, allow_nan=False)
+
+
+
+""" Figure 6
+
+    SSL pretraining: alpha, feature jacobian, effective rank
+    
+    algorithms: barlow_twins
+    models: vitt
+    datasets: imagenet
+    epoch: 40 (barlow_twins)
+    
+    train_configs: ssl
+    widths
+    seeds
+    noise configs
+    metrics
+"""
+
+figure6_conf = {
+    "algorithms": ["barlow_twins",],
+    "base_models": ["vitt"], #"vitt", "vits", "vit"],
+    "num_heads": {
+        "vitt": [3],
+        "vits": [4],
+        "vit": [6],
+    },
+    "widths": {
+        "barlow_twins": {
+            "imagenet": [6, 8, 12, 16, 32, 64],
+        },
+    },
+    "seeds" : [0, 1, 2],
+    "epochs": {
+        "barlow_twins": 40,
+    },
+    "datasets": ["imagenet",],
+    "metrics": ["train_loss", "alpha", "feature_input_jacobian",],
+}
+
+figure6_conf.update({
+    "filenames": {
+        "barlow_twins": {
+            dataset: {
+                width: [ f"{root_dir}_barlow_twins-{dataset}/{base_model}_width{width}/2_augs/lambd_0.005000_pdim_{num_heads * width}_lr_0.001_wd_1e-05/results_{dataset}_alpha_ssl_40_seed_{seed}.npy"  for seed in figure6_conf["seeds"] ] for width in figure6_conf["widths"]["barlow_twins"][dataset] for base_model in figure6_conf["base_models"] for num_heads in figure6_conf["num_heads"][base_model]
+            } for dataset in figure6_conf["datasets"]
+        },
+    },
+})
+
+missing_runs = []
+def aggregate_data(destdir=plots_path):
+    """ Aggregate results for figure 6
+    """
+    nseeds = len(figure6_conf["seeds"])
+    nmetrics = len(figure6_conf["metrics"])
+    figure6_data = figure6_conf
+
+    plot_data = {}
+    for algorithm in figure6_conf["algorithms"]:
+        plot_data[algorithm] = {}
+        for dataset in figure6_conf["datasets"]:
+            plot_data[algorithm][dataset] = {}
+            nwidths = len(figure6_conf["widths"][algorithm][dataset])
+            for base_model in figure6_conf["base_models"]:
+                plot_data[algorithm][dataset][base_model] = np.zeros((nwidths, nmetrics, nseeds))
+                for w_id, width in enumerate(figure6_conf["widths"][algorithm][dataset]):
+                    for s_id in range(nseeds):
+                        fname = figure6_conf["filenames"][algorithm][dataset][width][s_id]
+                        logger.info(f"Loading {fname}")
+                        try:
+                            stats = np.load(
+                                fname,
+                                allow_pickle=True
+                            ).tolist()
+                            for m_id, metric in enumerate(figure6_conf["metrics"]):
+                                epoch = figure6_conf["epochs"][algorithm]
+                                logger.info(f"Parsing {base_model}_{width} epoch {epoch} {metric} seed {s_id}")
+                                plot_data[algorithm][dataset][base_model][w_id, m_id, s_id] = parse_stats(fname, stats, metric, epoch)
+                                
+                        except FileNotFoundError:
+                            logger.info(f"File not found: {fname}")
+                            missing_runs.append(fname)
+                            
+                plot_data[algorithm][dataset][base_model] = \
+                    plot_data[algorithm][dataset][base_model].tolist()
+        
+    figure6_data.pop("filenames")
+    figure6_data["plot_data"] = plot_data
+    
+    if len(missing_runs) > 0:
+        logger.info("The following files were missing:")
+        for f in missing_runs:
+            logger.info(f)
+
+    filename = os.path.join(destdir, 'plot_data.json')
+    logger.info(f"Saving plot data to {filename}")
+    with open(filename, 'w') as fp:
+        json.dump(figure6_data, fp, allow_nan=False)
+
 
 """Main
 """
@@ -588,6 +805,16 @@ def aggregate_stats(fig_id):
         aggregate_data(destdir)
     elif fig_id == 3:
         destdir = os.path.join(plots_path, 'figure3')
+        if not os.path.exists(destdir):
+            os.makedirs(destdir)
+        aggregate_data(destdir)
+    elif fig_id == 5:
+        destdir = os.path.join(plots_path, 'figure5')
+        if not os.path.exists(destdir):
+            os.makedirs(destdir)
+        aggregate_data(destdir)
+    elif fig_id == 6:
+        destdir = os.path.join(plots_path, 'figure6')
         if not os.path.exists(destdir):
             os.makedirs(destdir)
         aggregate_data(destdir)
@@ -625,7 +852,7 @@ def main():
     global logger
     logger = logging.getLogger()
 
-    for fig_id in [2]:
+    for fig_id in [6]:
         aggregate_stats(fig_id)
 
 
