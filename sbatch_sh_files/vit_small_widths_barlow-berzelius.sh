@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 
-#SBATCH -A berzelius-2023-229
+#SBATCH -A berzelius-2023-242
 #SBATCH --gpus=1
 #SBATCH -t 2:00:00
-#SBATCH -C thin
+#SBATCH -C fat
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /proj/memorization/logs/%A_%a.out
 #SBATCH --error /proj/memorization/logs/%A_%a.err
-#SBATCH --array=0-191%64
+#SBATCH --array=8
+###SBATCH --array=0-191%64
 
 NAME="ssl_barlow_twins"
 
@@ -22,7 +23,7 @@ fi
 
 WANDB__SERVICE_WAIT=300
 
-model_key="vits"
+model_key="vit"
 
 #dataset='stl10'
 dataset='cifar10'
@@ -90,7 +91,6 @@ python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.ya
                     --training.track_alpha=True \
                     --training.track_jacobian=True \
                     --training.jacobian_batch_size=$jac_batch_size \
-                    --training.jacobian_nsamples=128 \
                     --training.weight_decay=1e-5 \
                     --training.epochs=100 \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
