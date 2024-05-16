@@ -7,7 +7,7 @@ function deactivate_conda_if_in_env() {
 }
 
 # On Berzelius
-CONDA_ENV="fastssl"
+CONDA_ENV="fastssl-2.0"
 
 # shellcheck source=/dev/null
 eval "$(/proj/memorization/users/x_matga/miniconda3/bin/conda shell.bash hook)"
