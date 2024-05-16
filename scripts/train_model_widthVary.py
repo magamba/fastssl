@@ -796,8 +796,8 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             results["feature_input_jacobian_corr"] = []
     
     if args.track_covariance and args.algorithm != "linear":
-        results["intra_manifold_covariance"] = []
-        results["inter_manifold_covariance"] = []
+        results["intra_manifold_eigen"] = []
+        results["inter_manifold_eigen"] = []
     
     if label_noise > 0 and args.algorithm == "linear":
         results.update(
@@ -1110,8 +1110,8 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             use_cuda=True,
             max_samples=args.covariance_nsamples,
         )
-        results["intra_manifold_covariance"].append((args.epochs, intra_manifold))
-        results["inter_manifold_covariance"].append((args.epochs, inter_manifold))
+        results["intra_manifold_eigen"].append((args.epochs, intra_manifold))
+        results["inter_manifold_eigen"].append((args.epochs, inter_manifold))
         
         if use_wandb:
             log_wandb(results, step=args.epochs +1, skip_keys=['eigenspectrum', 'base_width'])
