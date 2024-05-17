@@ -284,7 +284,7 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
         if dir_algorithm in ["ssl", "BarlowTwins"]:
             ckpt_dir = os.path.join(
                 main_dir,
-                "lambd_{:.6f}_pdim_{}_pdepth_{}_{}_lr_{}_wd_{}".format(
+                "lambd_{:.6f}_pdim_{}_pdepth_{}{}_lr_{}_wd_{}".format(
                     args.lambd,
                     args.projector_dim,
                     args.projector_depth,
@@ -296,7 +296,7 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
         elif dir_algorithm in ["byol"]:
             ckpt_dir = os.path.join(
                 main_dir,
-                "tau_{:.3f}_pdim_{}_pdepth_{}_{}_bsz_{}_lr_{}_wd_{}".format(
+                "tau_{:.3f}_pdim_{}_pdepth_{}{}_bsz_{}_lr_{}_wd_{}".format(
                     args.momentum_tau,
                     args.projector_dim,
                     args.projector_depth,
@@ -309,7 +309,7 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
         elif dir_algorithm in ["SimCLR"]:
             ckpt_dir = os.path.join(
                 main_dir,
-                "temp_{:.3f}_pdim_{}_pdepth_{}_{}_bsz_{}_lr_{}_wd_{}".format(
+                "temp_{:.3f}_pdim_{}_pdepth_{}{}_bsz_{}_lr_{}_wd_{}".format(
                     args.temperature,
                     args.projector_dim,
                     args.projector_depth,
@@ -322,7 +322,7 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
         elif dir_algorithm in ["VICReg"]:
             ckpt_dir = os.path.join(
                 main_dir,
-                "lambd_{:.3f}_mu_{:.3f}_pdim_{}_pdepth_{}_{}_bsz_{}_lr_{}_wd_{}".format(
+                "lambd_{:.3f}_mu_{:.3f}_pdim_{}_pdepth_{}{}_bsz_{}_lr_{}_wd_{}".format(
                     args.lambd,
                     args.mu,
                     args.projector_dim,
@@ -412,7 +412,7 @@ def build_model(args=None):
                 except:
                     base_width = 64
                 feat_dim = 32*base_width
-            if "vit" in training.model:
+            elif "vit" in training.model:
                 try:
                     assert len(training.model.split('_width'))>1
                     base_width = int(training.model.split('_width')[-1])
@@ -430,7 +430,7 @@ def build_model(args=None):
             else:
                 feat_dim = 2048
         
-        if training.dataset in ["cifar10", "stl10"]:
+        if training.dataset in ["cifar10", "stl10", "cifar10c"]:
             num_classes = 10
         elif "imagenet" in training.dataset:
             num_classes = 1000
@@ -681,7 +681,7 @@ def ood_eval(model, dataloader, epoch=None, epochs=None):
     corr_strengths = 5 # CIFAR-C uses 5 corruption strengths
     total_correct_1 = []
     total_correct_5 = []
-    total_samples = 0
+    total_acc_1, total_acc_5, total_samples = 0., 0., 0
     test_bar = tqdm(dataloader, desc="Test")
 
     for inp in test_bar:
@@ -704,9 +704,11 @@ def ood_eval(model, dataloader, epoch=None, epochs=None):
             total_correct_5.append(
                 (preds[:, 0:5] == target[:, None]).any(dim=-1).float()
             )
+            total_acc_1 += total_correct_1[-1].sum().item()
+            total_acc_5 += total_correct_5[-1].sum().item()
 
-        acc_1 = total_correct_1.sum().item() / total_samples * 100
-        acc_5 = total_correct_5.sum().item() / total_samples * 100
+        acc_1 = total_acc_1 / total_samples * 100
+        acc_5 = total_acc_5 / total_samples * 100
         test_bar.set_description(
             "{} Epoch: [{}/{}] ACC@1: {:.2f}% ACC@5: {:.2f}%".format(
                 "Test", epoch, epochs, acc_1, acc_5
@@ -716,9 +718,9 @@ def ood_eval(model, dataloader, epoch=None, epochs=None):
     samples_per_strength = total_samples // corr_strengths
     total_correct_1 = torch.cat(total_correct_1).reshape(corr_strengths, -1)
     total_correct_5 = torch.cat(total_correct_5).reshape(corr_strengths, -1)
-    
-    acc_1 = total_correct_1.sum(dim=-1).numpy() / samples_per_strength
-    acc_5 = total_correct_5.sum(dim=-1).numpy() / samples_per_strength
+
+    acc_1 = total_correct_1.sum(dim=-1).cpu().numpy() / samples_per_strength
+    acc_5 = total_correct_5.sum(dim=-1).cpu().numpy() / samples_per_strength
     return acc_1, acc_5
 
 
@@ -1150,9 +1152,6 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             results["feature_input_jacobian_clean"].append((args.epochs, jacobian_clean))
             results["feature_input_jacobian_corr"].append((args.epochs, jacobian_corr))
         
-        if use_wandb:
-            log_wandb(results, step=args.epochs +1, skip_keys=['eigenspectrum', 'base_width'])
-            
     if args.track_covariance:
         intra_manifold, inter_manifold = covariance_decomposition(
             net=model,
@@ -1164,8 +1163,8 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
         results["intra_manifold_eigen"].append((args.epochs, intra_manifold))
         results["inter_manifold_eigen"].append((args.epochs, inter_manifold))
         
-        if use_wandb:
-            log_wandb(results, step=args.epochs +1, skip_keys=['eigenspectrum', 'base_width'])
+    if use_wandb:
+        log_wandb(results, step=args.epochs +1, skip_keys=['eigenspectrum', 'base_width'])
 
     return results
 
@@ -1261,7 +1260,7 @@ def run_experiment(args):
         )
         print(f"Saving precached features to {save_path}")
         np.save(save_path, results)
-    elif training.jacobian_only:
+    elif eval.jacobian_only:
         print("Computing input Jacobian of SSL features, no training")
         results = {}
         jacobian, jacobian_clean, jacobian_corr = input_jacobian(

@@ -339,7 +339,7 @@ def gen_image_label_pipeline_ffcv_ssl(
             custom_field_img_mapper["image{}".format(i + 1)] = "image"
 
         loaders[split] = Loader(
-            datadir[split],
+            datadir["train"],
             batch_size=batch_size,
             num_workers=num_workers,
             os_cache=True,

@@ -30,8 +30,9 @@ def covariance_decomposition(net, layer, data_loader, use_cuda=False, max_sample
 
 
 def generate_activations_prelayer_torch(net,layer,data_loader,use_cuda=False,max_samples=0):
-    num_augs = len(next(iter(data_loader))) -1
-    ndims = np.prod(batch_[0][1:])
+    batch_ = next(iter(data_loader))
+    num_augs = len(batch_) -1
+    ndims = net.backbone.proj[0].weight.shape[1]
     
     activations = []
     def hook_fn(m,i,o):
@@ -43,7 +44,7 @@ def generate_activations_prelayer_torch(net,layer,data_loader,use_cuda=False,max
     net.eval()
     
     num_samples = 0
-    for i, inp in enumerate(tqdm(data_loader)):
+    for i, inp in enumerate(tqdm(data_loader, desc="Covariance decomposition")):
         inp = list(inp)
         _ = inp.pop(1) # discarding labels
         num_samples += inp[0].shape[0]
