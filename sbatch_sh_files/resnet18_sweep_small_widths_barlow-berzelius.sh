@@ -46,7 +46,7 @@ lambdas=(0.0001 0.0002 0.0004 0.001 0.002 0.005 0.01 0.02)
 widths=({8..64..4})
 pdepth=$1
 
-noise_types=(
+ood_noise_types=(
     "frost"
     "glass_blur"
     "spatter"
@@ -118,7 +118,7 @@ destdir=$checkpt_dir/resnet18/width${width}/2_augs/lambd_"$(printf %.6f $lambd)"
 if [ ! -d $destdir ]; then
     mkdir -p $destdir
 fi
-cp -v "$SLURM_TMPDIR/exp_ssl_5.pth" "$destdir/exp_ssl_5_seed_"$seed".pt"
+cp -v "$SLURM_TMPDIR/exp_ssl_100.pth" "$destdir/exp_ssl_100_seed_"$seed".pt"
 
 src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
 
