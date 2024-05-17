@@ -120,7 +120,7 @@ if [ ! -d $destdir ]; then
 fi
 cp -v "$SLURM_TMPDIR/exp_ssl_5.pth" "$destdir/exp_ssl_5_seed_"$seed".pt"
 
-src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_5_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then
@@ -237,7 +237,7 @@ pretrain_dataset='cifar10'
 
 checkpt_dir="${SAVE_DIR}"/"$NAME""$ckpt_str"
 
-src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_5_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then
@@ -268,7 +268,7 @@ python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
 new_status=$?
 status=$((status|new_status))
 
-src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-06/1_augs_eval/exp_linear_2_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-06/1_augs_eval/exp_linear_200_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then
