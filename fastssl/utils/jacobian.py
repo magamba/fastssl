@@ -276,7 +276,8 @@ def get_implicit_jacobian_fn(
 def spectral_norm_power_iteration_implicit(
     v: torch.Tensor,
     jvp_fn: Callable,
-    vjp_fn: Callable
+    vjp_fn: Callable,
+    input_dims: Union[Tuple, int]
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """ Compute one iteration of the power method to estimate
         the largest singular value of J, without instantiating J
@@ -295,7 +296,7 @@ def spectral_norm_power_iteration_implicit(
             Equivalently, u = J.T @ v and t = J u = J @ (J.T @ v)
     """
     u = vjp_fn(v.unsqueeze(0))
-    u /= torch.linalg.vector_norm(u, ord=2, dim=(1,2,3), keepdim=True)
+    u /= torch.linalg.vector_norm(u, ord=2, dim=input_dims, keepdim=True)
     v = jvp_fn(u)
     v /= torch.linalg.vector_norm(v, ord=2, dim=-1, keepdim=True)
     return (u, v)
@@ -326,6 +327,8 @@ def spectral_norm_implicit(
     dtype = x.dtype
     nbatches, nindims = x.shape[0], np.prod(x.shape[1:])
     
+    input_dims = tuple(range(1, len(x.shape)))
+    
     batch_indices = torch.arange(nbatches, dtype=torch.long, device=device)
     atol = torch.full((1,), fill_value=atol, device=device, dtype=dtype)
     
@@ -339,7 +342,7 @@ def spectral_norm_implicit(
     v_prev = torch.zeros((nbatches, noutdims), dtype=dtype, device=device)
     
     for i in range(num_steps):
-        u, v = spectral_norm_power_iteration_implicit(v, jvp_fn, vjp_fn)
+        u, v = spectral_norm_power_iteration_implicit(v, jvp_fn, vjp_fn, input_dims)
         #print(f"u: {u.shape}")
         u = u.reshape(nbatches, -1)
         #print(f"u: {u.shape}")
