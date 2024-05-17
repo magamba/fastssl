@@ -62,7 +62,7 @@ noise_types=(
     "snow"
 )
 
-WIDTHS=${#lambdas[@]}
+WIDTHS=${#widths[@]}
 conf_id=$((SLURM_ARRAY_TASK_ID/WIDTHS))
 width_id=$((SLURM_ARRAY_TASK_ID%WIDTHS))
 
