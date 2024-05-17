@@ -414,8 +414,8 @@ def input_jacobian(net, layer, data_loader, batch_size=128, max_samples=0, use_c
     
     for i, batch in enumerate(progress_bar):
         
-        if isinstance(batch, (tuple, list)):
-            batch = batch[0]
+        #if isinstance(batch, (tuple, list)):
+        #    batch = batch[0]
         x = batch[0].to(device) # read input img from batch
         num_samples += x.shape[0]
         operator_norm = compute_operator_norm(x)
@@ -445,7 +445,7 @@ def input_jacobian(net, layer, data_loader, batch_size=128, max_samples=0, use_c
         
         progress_bar.set_description(
             "Batch: [{}/{}] avg Jacobian norm: {:.2f} avg Jacobian norm clean: {:.2f} avg Jacobian norm corr: {:.2f}".format(
-                i, num_batches, avg_norm, avg_norm_clean, avg_norm_corr
+                i + 1, num_batches, avg_norm, avg_norm_clean, avg_norm_corr
             )
         )
     if handle is not None:
