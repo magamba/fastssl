@@ -74,7 +74,18 @@ pdim=$(($width * 32))
 
 wandb_group='smoothness'
 
-model=resnet18proj_width${width}
+model_key="vit"
+declare -A heads
+heads=(
+    ["vitt"]=3
+    ["vits"]=4
+    ["vit"]=6
+)
+numheads="${heads[$model_key]}"
+
+pdim=$(($width * $numheads))
+
+model="$model_key"proj_width${width}
 
 ## configure checkpointing dirs and dataset paths
 
@@ -114,13 +125,13 @@ python scripts/train_model_widthVary.py --config-file configs/cc_SimCLR.yaml \
 status=$?
 
 # let's save the model checkpoints to persistent storage
-destdir=$checkpt_dir/resnet18/width${width}/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train
+destdir=$checkpt_dir/$model_key/width${width}/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train
 if [ ! -d $destdir ]; then
     mkdir -p $destdir
 fi
 cp -v "$SLURM_TMPDIR/exp_ssl_100.pth" "$destdir/exp_ssl_100_seed_"$seed".pt"
 
-src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/$model_key/width"$width"/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then
@@ -134,7 +145,7 @@ fi
 new_status=$?
 status=$((status|new_status))
 
-model=resnet18feat_width${width}
+model="$model_key"feat_width${width}
 
 echo "Precaching features"
 
@@ -237,7 +248,7 @@ pretrain_dataset='cifar10'
 
 checkpt_dir="${SAVE_DIR}"/"$NAME""$ckpt_str"
 
-src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/$model_key/width"$width"/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then
@@ -268,7 +279,7 @@ python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
 new_status=$?
 status=$((status|new_status))
 
-src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-06/1_augs_eval/exp_linear_200_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/$model_key/width"$width"/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-06/1_augs_eval/exp_linear_200_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then
