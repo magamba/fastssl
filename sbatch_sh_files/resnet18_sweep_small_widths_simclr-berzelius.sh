@@ -32,12 +32,12 @@ if [ $dataset = 'stl10' ]
 then
     batch_size=256
     jac_batch_size=8
-    proj_str="bt-stl10-"
+    proj_str="simclr-stl10-"
     ckpt_str="-stl10"
 else
     batch_size=512
     jac_batch_size=512
-    proj_str="bt-cifar10-"
+    proj_str="simclr-cifar10-"
     ckpt_str="-cifar10"
 fi
 
@@ -92,7 +92,7 @@ testset="${DATA_DIR}"/$dataset
 
 echo "Pretraining model"
 
-# Let's train a SSL (BarlowTwins) model with the above hyperparams
+# Let's train a SSL (SimCLR) model with the above hyperparams
 python scripts/train_model_widthVary.py --config-file configs/cc_SimCLR.yaml \
                     --training.temperature=$temp --training.projector_dim=$pdim \
                     --training.projector_depth=$pdepth \
