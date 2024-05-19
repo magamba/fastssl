@@ -453,6 +453,7 @@ def build_model(args=None):
     model = model_cls(**model_args)
     if eval.ood_eval:
         ckpt_path = gen_ckpt_path(training, eval, epoch=args.training.epochs)
+        print(f"Loading model checkpoint {ckpt_path}")
         model.load_state_dict(
             torch.load(ckpt_path, map_location="cpu")["model"]
         )
@@ -1069,7 +1070,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch)
                 torch.save(state, ckpt_path)
 
-        elif epoch % args.log_interval == 0:
+        elif epoch % args.log_interval == 0 or epoch == args.epochs:
             ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch, suffix='pt')
             state = dict(
                 epoch=epoch + 1,

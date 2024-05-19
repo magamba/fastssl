@@ -1,8 +1,8 @@
 #! /bin/bash
 #SBATCH -A berzelius-2024-123
 #SBATCH --gpus=1
-#SBATCH -t 6:00:00
-#SBATCH --reservation 1g.10gb
+#SBATCH -t 5:00:00
+#SBATCH -C fat
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /proj/memorization/logs/%A_%a.out
@@ -101,6 +101,8 @@ fi
 trainset="${DATA_DIR}"/$dataset
 testset="${DATA_DIR}"/$dataset
 
+
+if [[ "$pdepth" == "3" ]] || [[ "$pdepth" == "4" ]]; then
 echo "Pretraining model"
 
 # Let's train a SSL (BarlowTwins) model with the above hyperparams
@@ -125,17 +127,17 @@ python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.ya
 status=$?
 
 # let's save the model checkpoints to persistent storage
-destdir=$checkpt_dir/$model_key/width${width}/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train
+destdir="$checkpt_dir/"$model_key"/width"${width}"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train"
 if [ ! -d $destdir ]; then
     mkdir -p $destdir
 fi
 cp -v "$SLURM_TMPDIR/exp_ssl_100.pth" "$destdir/exp_ssl_100_seed_"$seed".pt"
 
-src_checkpt="$checkpt_dir/$model_key/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/"$model_key"/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then
-    echo "Error: no file not found $src_checkpt"
+    echo "Error: file not found $src_checkpt"
     exit 1
 else
     echo "Copying SSL features to local storage"
@@ -185,7 +187,6 @@ python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml
 new_status=$?
 status=$((status|new_status))
 
-
 echo "Noisy labels training"
 
 for noise in 10 20 40 60 80 100; do
@@ -193,7 +194,6 @@ for noise in 10 20 40 60 80 100; do
     # running eval with label noise
     wandb_projname="$proj_str"'ssl-robustness-noise'$noise
     checkpt_dir="${SAVE_DIR}"/"$NAME""_noise"$noise"$ckpt_str"
-
     if [ ! -d "$checkpt_dir" ]
     then
         mkdir -p "$checkpt_dir"
@@ -218,7 +218,6 @@ for noise in 10 20 40 60 80 100; do
                         --logging.wandb_project=$wandb_projname
     new_status=$?
     status=$((status|new_status))
-
     # run linear eval on precached features from model: using default seed 42
     python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml \
                         --training.lambd=$lambd --training.projector_dim=$pdim \
@@ -234,12 +233,14 @@ for noise in 10 20 40 60 80 100; do
                         --training.track_jacobian=True \
                         --training.jacobian_batch_size=512 \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
-                        --logging.wandb_project=$wandb_projname
+                       --logging.wandb_project=$wandb_projname
 
     new_status=$?
     status=$((status|new_status))
 
 done
+
+fi # end noisy eval for pdepth 3 and 4
 
 echo "OOD evaluation"
 
@@ -248,11 +249,11 @@ pretrain_dataset='cifar10'
 
 checkpt_dir="${SAVE_DIR}"/"$NAME""$ckpt_str"
 
-src_checkpt="$checkpt_dir/$model_key/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/"$model_key"/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then
-    echo "Error: no file not found $src_checkpt"
+    echo "Error: file not found $src_checkpt"
     exit 1
 else
     echo "Copying SSL features to local storage"
@@ -279,7 +280,7 @@ python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
 new_status=$?
 status=$((status|new_status))
 
-src_checkpt="$checkpt_dir/$model_key/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-06/1_augs_eval/exp_linear_200_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/"$model_key"_width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-06/1_augs_eval/exp_linear_200_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then

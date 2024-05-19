@@ -90,7 +90,7 @@ class SimCLR(SSL):
             dataset=self.dataset,
             projector_dim=projector_dim,
             hidden_dim=hidden_dim,
-            projector_depth=2,
+            projector_depth=projector_depth,
         )
 
     def forward(self, x):

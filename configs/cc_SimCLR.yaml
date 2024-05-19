@@ -12,6 +12,6 @@ training:
   model: 'resnet50proj'
   num_workers: 4
   ckpt_dir: 'checkpoints'
-  use_autocast: False
+  use_autocast: True
   log_interval: 100
   num_augmentations: 2
