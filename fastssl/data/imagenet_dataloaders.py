@@ -29,6 +29,7 @@ from fastssl.data.cifar_transforms import (
 )
 
 import numpy as np
+from fastssl.utils.label_correction import with_indices, corrupt_labels
 
 IMG_SIZE = 224
 DEFAULT_CROP_RATIO = 224/256
@@ -439,16 +440,20 @@ def get_ssltrain_imagenet_ffcv_dataloaders(
     return loaders
 
 def get_ssltrain_imagenet_pytorch_dataloaders(
-        data_dir=None, batch_size=None, num_workers=None
+        data_dir=None, batch_size=None, num_workers=None, extra_augmentations=False,
 ):
     paths = {
         'train': data_dir + '/train',
     }
 
     loaders = {}
+    if extra_augmentations:
+        transform = MultiViewTransform()
+    else:
+        transform = Transform()
 
     for name in ['train']:
-        dataset = torchvision.datasets.ImageFolder(paths[name], Transform())
+        dataset = torchvision.datasets.ImageFolder(paths[name], transform)
         loader = torch.utils.data.DataLoader(
             dataset, batch_size=batch_size, num_workers=num_workers,
             pin_memory=True, shuffle=True, drop_last=True
@@ -460,16 +465,46 @@ def get_ssltrain_imagenet_pytorch_dataloaders(
 
  
 def get_ssleval_imagenet_pytorch_dataloaders(
-        data_dir=None, batch_size=None, num_workers=None
+        data_dir=None, batch_size=None, num_workers=None, label_noise=0, ood_eval=False,
 ):
     paths = {
         'train': data_dir + '/train',
-        'test': data_dir + '/val',
     }
+    
+    if ood_eval:
+        assert label_noise == 0, "Error: choose either ood_eval=True or label_noise > 0"
+        paths.update(
+            { f'test-{l}': data_dir + f'/{l}' for l in range(1, 6) }
+        )
+    else:
+        paths['test'] = data_dir + '/val'
+    
+    dset_cls = torchvision.datasets.ImageFolder
+    if label_noise > 0:
+        dset_cls = with_indices(dset_cls)
 
     loaders = {}
-    for name in ['train', 'test']:
-        dataset = torchvision.datasets.ImageFolder(paths[name], EvalTransform())
+    for name in paths.keys():
+        dataset = dset_cls(paths[name], EvalTransform())
+        if name == 'train' and label_noise > 0:
+            assert not ood_eval, "Error: choose either ood_eval=True or label_noise > 0"
+            try:
+                targets = dataset.targets
+            except AttributeError:
+                targets = dataset.labels
+            targets_orig = targets.copy()
+            new_targets = corrupt_labels(
+                targets=targets,
+                label_noise=label_noise
+            )
+            try:
+                _ = dataset.targets
+                dataset.targets = new_targets
+            except AttributeError:
+                dataset.labels = new_targets
+	            
+            dataset._targets_orig = targets_orig
+        
         loader = torch.utils.data.DataLoader(
             dataset, batch_size=batch_size, num_workers=num_workers,
             pin_memory=True, shuffle=False, drop_last=True
@@ -539,6 +574,16 @@ class Transform:
         y1 = self.transform(x)
         y2 = self.transform_prime(x)
         return y1, y2
+
+class MultiViewTransform(Transform):
+    def __init__(self, n_augs: int = 5):
+        super(MultiViewTransform, self).__init__()
+        self.n_augs = n_augs
+        
+    def __call__(self, x)
+        y1 = self.transform(x)
+        output = (y1, ) + tuple(self.transform_prime(x) for _ in range(self.n_augs -1))
+        return output 
 
 class EvalTransform:
     def __init__(self):

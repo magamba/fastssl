@@ -1,6 +1,7 @@
 from tqdm import tqdm
 import torch
 from torch.cuda.amp import autocast
+import numpy as np
 
 def eval_step_clean_restored(model, dataloader, epoch=None, epochs=None, split=""):
     model.eval()
@@ -86,3 +87,65 @@ def eval_step_clean_restored(model, dataloader, epoch=None, epochs=None, split="
             )
         )
     return acc_1, acc_5, acc_clean_1, acc_clean_5, acc_corr_1, acc_corr_5, acc_restored_1, acc_restored_5
+
+
+def with_indices(datasetclass):
+    """ Wraps a DataSet class, so that it returns (data, target, index, ground_truth).
+    """
+    def __getitem__(self, index):
+        data, target = datasetclass.__getitem__(self, index)
+        try:
+            ground_truth = self._targets_orig[index]
+        except AttributeError:
+            ground_truth = target
+        
+        return data, target, ground_truth, index
+        
+    return type(datasetclass.__name__, (datasetclass,), {
+        '__getitem__': __getitem__,
+    })
+    
+
+def corrupt_labels(targets, label_noise, seed=1234):
+    """ Corrupt @label_noise percent of the targets
+        using labels sampled uniformly at random from other classes.
+    """
+    from numpy.random import default_rng
+    rng = default_rng(seed)
+
+    if label_noise <= 0 return targets
+
+    if label_noise > 1:
+        label_noise = float(label_noise) / 100.
+
+    if not isinstance(targets,torch.Tensor):
+        targets_tensor = torch.LongTensor(targets)
+    else:
+        targets_tensor = torch.clone(targets)
+
+    targets_shape = targets_tensor.shape
+    corrupt_idx = int(np.ceil(targets_tensor.shape[0] * noise_percentage))
+    num_classes = targets_tensor.unique().shape[0]
+    if corrupt_idx == 0:
+        return targets
+
+    noise = torch.zeros_like(targets_tensor)
+    noise[0:corrupt_idx] = torch.from_numpy(
+        rng.integers(low=1, high=num_classes, size=(corrupt_idx,))
+    )
+    shuffle = torch.from_numpy(rng.permutation(noise.shape[0]))
+    noise = noise[shuffle]
+
+    new_labels = (
+        (targets_tensor + noise) % num_classes
+        ).type(torch.LongTensor)
+
+    num_targets_match = (new_labels==targets_tensor).sum()
+    print("Amount of label noise added: {:.3f}".format(
+        100.0*(1-num_targets_match/targets_shape[0])))
+
+    if not isinstance(targets,torch.Tensor):
+        # assuming targets was a list
+        new_labels = list(new_labels)
+    return new_labels
+
