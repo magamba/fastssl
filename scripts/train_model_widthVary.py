@@ -116,6 +116,7 @@ Section("eval", "Fast CIFAR-10 evaluation").params(
     jacobian_only=Param(bool, "Load model weights and compute input Jacobian of the last feature layer", default=False),
     ood_eval=Param(bool, "Evaluate OOD robustness on test set and exit", default=False),
     ood_noise_type=Param(str, "OOD noise type", default=""),
+    linear_probe_ckpt=Param(str, "Path to model checkpoint for linear probe, to be loaded on top of encoder checkpoints", default=""),
 )
 
 Section("logging", "Fast CIFAR-10 logging options").params(
@@ -456,9 +457,19 @@ def build_model(args=None):
     model = model_cls(**model_args)
     if eval.ood_eval:
         ckpt_path = gen_ckpt_path(training, eval, epoch=args.training.epochs)
-        model.load_state_dict(
-            torch.load(ckpt_path, map_location="cpu")["model"]
+        
+        strict_loading = eval.linear_probe_ckpt == ""
+        missing_keys, unexpected_keys = model.load_state_dict(
+            torch.load(ckpt_path, map_location="cpu")["model"], strict=strict_loading,
         )
+        assert len(unexpected_keys) == 0, "Error: unexpected model keys: {unexpected_keys}"
+        if len(missing_keys) > 0:
+            assert torch.all(torch.as_tensor(['fc' in str(k) for k in missing_keys], dtype=torch.bool)), "Error: can only load linear probe checkpoints."
+            print(f"Loading linear probe checkpoint {eval.linear_probe_ckpt}")
+            model.fc.load_state_dict(
+                torch.load(eval.linear_probe_ckpt, map_location="cpu")["model"]["fc"]
+            )
+        
     model = model.to(memory_format=torch.channels_last).cuda()
     return model
 
