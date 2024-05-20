@@ -420,6 +420,7 @@ def input_jacobian(net, layer, data_loader, batch_size=128, max_samples=0, use_c
         #if isinstance(batch, (tuple, list)):
         #    batch = batch[0]
         x = batch[0].to(device) # read input img from batch
+        x = x.contiguous()
         num_samples += x.shape[0]
         operator_norm = compute_operator_norm(x)
         

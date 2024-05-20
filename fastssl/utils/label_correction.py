@@ -97,6 +97,7 @@ def with_indices(datasetclass):
         try:
             ground_truth = self._targets_orig[index]
         except AttributeError:
+            print("Warning: no ground truth found")
             ground_truth = target
         
         return data, target, ground_truth, index
@@ -113,7 +114,8 @@ def corrupt_labels(targets, label_noise, seed=1234):
     from numpy.random import default_rng
     rng = default_rng(seed)
 
-    if label_noise <= 0 return targets
+    if label_noise <= 0:
+        return targets
 
     if label_noise > 1:
         label_noise = float(label_noise) / 100.
@@ -124,7 +126,7 @@ def corrupt_labels(targets, label_noise, seed=1234):
         targets_tensor = torch.clone(targets)
 
     targets_shape = targets_tensor.shape
-    corrupt_idx = int(np.ceil(targets_tensor.shape[0] * noise_percentage))
+    corrupt_idx = int(np.ceil(targets_tensor.shape[0] * label_noise))
     num_classes = targets_tensor.unique().shape[0]
     if corrupt_idx == 0:
         return targets

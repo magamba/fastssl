@@ -1,4 +1,4 @@
-# Ffcv dataloaders for imagenet to run barlow twins
+# Ffcv dataloaders for imagenet to run barlow twinsr
 import torch
 import torchvision
 from typing import List
@@ -447,18 +447,23 @@ def get_ssltrain_imagenet_pytorch_dataloaders(
     }
 
     loaders = {}
-    if extra_augmentations:
-        transform = MultiViewTransform()
-    else:
-        transform = Transform()
 
     for name in ['train']:
-        dataset = torchvision.datasets.ImageFolder(paths[name], transform)
+        dataset = torchvision.datasets.ImageFolder(paths[name], Transform())
         loader = torch.utils.data.DataLoader(
             dataset, batch_size=batch_size, num_workers=num_workers,
-            pin_memory=True, shuffle=True, drop_last=True
+            pin_memory=False, shuffle=True, drop_last=True
         )
         loaders[name] = loader
+
+    if extra_augmentations:
+        for name in ['train_extra']:
+            dataset = torchvision.datasets.ImageFolder(paths['train'], MultiViewTransform())
+            loader = torch.utils.data.DataLoader(
+                dataset, batch_size=batch_size, num_workers=num_workers,
+                pin_memory=False, shuffle=True, drop_last=True
+            )
+            loaders[name] = loader
 
     return loaders
 
@@ -472,6 +477,9 @@ def get_ssleval_imagenet_pytorch_dataloaders(
     }
     
     if ood_eval:
+        train_dir = "/".join(data_dir.split("/")[:-1]) # removing noise_type
+        train_dir = "-".join(train_dir.split("-")[:-1]) # removing "-c" suffix from dataset
+        paths['train'] = train_dir + '/train'
         assert label_noise == 0, "Error: choose either ood_eval=True or label_noise > 0"
         paths.update(
             { f'test-{l}': data_dir + f'/{l}' for l in range(1, 6) }
@@ -479,12 +487,12 @@ def get_ssleval_imagenet_pytorch_dataloaders(
     else:
         paths['test'] = data_dir + '/val'
     
-    dset_cls = torchvision.datasets.ImageFolder
-    if label_noise > 0:
-        dset_cls = with_indices(dset_cls)
-
     loaders = {}
     for name in paths.keys():
+        dset_cls = torchvision.datasets.ImageFolder
+        if name == 'train' and label_noise > 0:
+            dset_cls = with_indices(dset_cls)
+
         dataset = dset_cls(paths[name], EvalTransform())
         if name == 'train' and label_noise > 0:
             assert not ood_eval, "Error: choose either ood_eval=True or label_noise > 0"
@@ -497,6 +505,7 @@ def get_ssleval_imagenet_pytorch_dataloaders(
                 targets=targets,
                 label_noise=label_noise
             )
+            dataset.samples = [ (s[0], t) for (s, t) in zip(dataset.samples, new_targets) ]
             try:
                 _ = dataset.targets
                 dataset.targets = new_targets
@@ -507,7 +516,7 @@ def get_ssleval_imagenet_pytorch_dataloaders(
         
         loader = torch.utils.data.DataLoader(
             dataset, batch_size=batch_size, num_workers=num_workers,
-            pin_memory=True, shuffle=False, drop_last=True
+            pin_memory=False, shuffle=False, drop_last=True
         )
         loaders[name] = loader
 
@@ -540,7 +549,8 @@ def get_ssltrain_imagenet_pytorch_dataloaders_distributed(
 class Transform:
     def __init__(self):
         self.transform = transforms.Compose([
-            transforms.RandomResizedCrop(224, interpolation=Image.BICUBIC),
+            #transforms.RandomResizedCrop(224, interpolation=Image.BICUBIC),
+            transforms.RandomResizedCrop(96, interpolation=Image.BICUBIC),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomApply(
                 [transforms.ColorJitter(brightness=0.4, contrast=0.4,
@@ -555,7 +565,8 @@ class Transform:
                                 std=[0.229, 0.224, 0.225])
         ])
         self.transform_prime = transforms.Compose([
-            transforms.RandomResizedCrop(224, interpolation=Image.BICUBIC),
+            #transforms.RandomResizedCrop(224, interpolation=Image.BICUBIC),
+            transforms.RandomResizedCrop(96, interpolation=Image.BICUBIC),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomApply(
                 [transforms.ColorJitter(brightness=0.4, contrast=0.4,
@@ -580,7 +591,7 @@ class MultiViewTransform(Transform):
         super(MultiViewTransform, self).__init__()
         self.n_augs = n_augs
         
-    def __call__(self, x)
+    def __call__(self, x):
         y1 = self.transform(x)
         output = (y1, ) + tuple(self.transform_prime(x) for _ in range(self.n_augs -1))
         return output 
@@ -588,6 +599,7 @@ class MultiViewTransform(Transform):
 class EvalTransform:
     def __init__(self):
         self.transform = transforms.Compose([
+            transforms.Resize((96, 96), interpolation=Image.BICUBIC),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                 std=[0.229, 0.224, 0.225])

@@ -22,8 +22,16 @@ if [ -z "$user" ]; then
 fi
 echo "SETUP_ENV - user=$user"
 SAVE_DIR="/mimer/NOBACKUP/groups/linear-regions/smoothness/checkpoints"
+OUTPUT="$SAVE_DIR"
 DATA_DIR="/mimer/NOBACKUP/groups/linear-regions/smoothness/data"
 DEVICE="cuda"
+
+# avoid getting stuck at PCA
+export MKL_THREADING_LAYER=TBB
+
+# set up wandb
+WANDB_API_KEY="a31e51e69e539eaffb5d3683c402e59375cd47e6"
+WANDB_CACHE_DIR="$TMPDIR"
 
 # Set this to zero, disabling random salts for hashes
 # if an arg is given, then use that instead
@@ -38,7 +46,7 @@ done
 echo "SETUP_ENV - PYTHONHASHSEED=$PYTHONHASHSEED"
 
 
-export SAVE_DIR DATA_DIR DEVICE PYTHONHASHSEED
+export SAVE_DIR DATA_DIR OUTPUT DEVICE PYTHONHASHSEED WANDB_API_KEY WANDB_CACHE_DIR
 
 echo "SETUP_ENV - Current ENV is:"
 printenv

@@ -47,6 +47,8 @@ def generate_activations_prelayer_torch(net,layer,data_loader,use_cuda=False,max
     for i, inp in enumerate(tqdm(data_loader, desc="Covariance decomposition")):
         inp = list(inp)
         _ = inp.pop(1) # discarding labels
+        if isinstance(inp, (tuple, list)) and isinstance(inp[0], (tuple, list)):
+            inp = inp[0]
         num_samples += inp[0].shape[0]
         images = torch.vstack(inp) # (batch_size x <feat_dim> , batch_size x <feat_dim>, ...) -> (num_augs * batch_size x <feat_dim>)
         

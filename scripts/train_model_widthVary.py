@@ -218,7 +218,7 @@ def build_dataloaders(
                  batch_size,
                  num_workers,
                  extra_augmentations=extra_augmentations,
-            )             
+            )
         elif algorithm == "linear":
             default_linear_bsz = 512
 #            return imagenet_classifier_ffcv(
@@ -806,7 +806,7 @@ def precache_outputs(model, loaders, args, eval_args):
         # data = data.cuda(non_blocking=True)
         with autocast():
             with torch.no_grad():
-                out_augs = [model(x) for x in inp]
+                out_augs = [model(x.cuda()) for x in inp]
                 # mean of features across different augmentations of each image
                 out = torch.mean(torch.stack(out_augs), dim=0)
                 # out = model(data)
@@ -818,6 +818,7 @@ def precache_outputs(model, loaders, args, eval_args):
     trainset_outputs = torch.cat(trainset_outputs)
     trainset_labels = torch.cat(trainset_labels)
     if args.label_noise > 0:
+        breakpoint()
         trainset_ground_truths = torch.cat(trainset_ground_truths)
         trainset_sample_ids = torch.cat(trainset_sample_ids)
         total_corr = noise_ratio / num_samples * 100
@@ -836,7 +837,7 @@ def precache_outputs(model, loaders, args, eval_args):
         # data = data.cuda(non_blocking=True)
         with autocast():
             with torch.no_grad():
-                out_augs = [model(x) for x in inp]
+                out_augs = [model(x.cuda()) for x in inp]
                 # mean of features across different augmentations of each image
                 out = torch.mean(torch.stack(out_augs), dim=0)
                 # out = model(data)
@@ -913,13 +914,15 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
 
     if args.algorithm == "linear":
         if args.use_autocast:
-            activations = powerlaw.generate_activations_prelayer_torch(
+            #activations = powerlaw.generate_activations_prelayer_torch(
+            activations = powerlaw.generate_activations_prelayer(
                 net=model,
                 layer=model.fc,
                 data_loader=loaders["train"],
                 use_cuda=True,
             )
-            activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
+            #activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
+            activations_eigen = powerlaw.get_eigenspectrum(activations)
             with autocast():
                 try:
                     tmin, tmax = 3, min(50, activations.shape[1])
@@ -1003,13 +1006,15 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
         if epoch == 1:
             if args.track_alpha:
                 # compute alpha before training starts!
-                activations = powerlaw.generate_activations_prelayer_torch(
+                #activations = powerlaw.generate_activations_prelayer_torch(
+                activations = powerlaw.generate_activations_prelayer(
                     net=model,
                     layer=model.backbone.proj,
                     data_loader=loaders["train"],
                     use_cuda=True,
                 )
-                activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
+                #activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
+                activations_eigen = powerlaw.get_eigenspectrum(activations)
                 tmin, tmax = 3, min(100, activations.shape[1])
                 alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
                     activations_eigen, trange=np.arange(tmin, tmax)
@@ -1117,7 +1122,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch)
                 torch.save(state, ckpt_path)
 
-        elif epoch % args.log_interval == 0:
+        elif epoch % args.log_interval == 0 or epoch == args.epochs:
             ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch, suffix='pt')
             state = dict(
                 epoch=epoch + 1,
@@ -1131,13 +1136,15 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             torch.save(state, ckpt_path)
             if args.track_alpha:
                 # compute alpha at intermediate training steps
-                activations = powerlaw.generate_activations_prelayer_torch(
+                #activations = powerlaw.generate_activations_prelayer_torch(
+                activations = powerlaw.generate_activations_prelayer(
                     net=model,
                     layer=model.backbone.proj,
                     data_loader=loaders["train"],
                     use_cuda=True,
                 )
-                activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
+                #activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
+                activations_eigen = powerlaw.get_eigenspectrum(activations)
                 tmin, tmax = 3, min(100, activations.shape[1])
                 alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
                     activations_eigen, trange=np.arange(tmin, tmax)

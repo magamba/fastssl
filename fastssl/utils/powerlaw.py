@@ -76,6 +76,8 @@ def generate_activations_prelayer(net,layer,data_loader,use_cuda=False,dim_thres
     net.eval()
     for i, inp in enumerate(tqdm(data_loader)):
         (images, labels) = (inp[0], inp[1]) # discarding any extra item from the batch
+        if isinstance(images, (tuple, list)):
+            images = images[0]
         if use_cuda:
             images = images.cuda()
         with torch.no_grad():
@@ -90,7 +92,7 @@ def generate_activations_prelayer_torch(net,layer,data_loader,use_cuda=False,dim
     pool_size = 1
     activations = []
     def hook_fn(m,i,o):
-        activations.append(i[0])
+        activations.append(i[0].cpu().numpy())
     handle = layer.register_forward_hook(hook_fn)
 
     if use_cuda:
