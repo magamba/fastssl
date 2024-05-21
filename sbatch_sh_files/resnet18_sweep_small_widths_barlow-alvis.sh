@@ -19,7 +19,7 @@ if [ -z "$1" ]; then
     exit 1
 fi
 
-export SLURM_TMPDIR="/scratch/local/${SLURM_ARRAY_JOB_ID}/${SLURM_ARRAY_TASK_ID}"
+export SLURM_TMPDIR="${TMPDIR}"/fastssl
 if [ ! -d "$SLURM_TMPDIR" ]; then
     mkdir -p "$SLURM_TMPDIR"
 fi
@@ -37,7 +37,7 @@ then
     ckpt_str="-stl10"
 elif [ $dataset = 'imagenet100' ]; then
     batch_size=512
-    jac_batch_size=512
+    jac_batch_size=256
     proj_str="bt-imagenet100-"
     ckpt_str="-imagenet100"
 else
@@ -103,9 +103,11 @@ fi
 
 echo "Pretraining model"
 
+
 # Let's train a SSL (BarlowTwins) model with the above hyperparams
 python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.yaml \
                     --training.lambd=$lambd --training.projector_dim=$pdim \
+                    --training.datadir=$trainset \
                     --training.projector_depth=$pdepth \
                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                     --training.batch_size=$batch_size --training.model=$model \
@@ -117,6 +119,7 @@ python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.ya
                     --training.track_alpha=True \
                     --training.track_jacobian=True \
                     --training.track_covariance=True \
+                    --training.covariance_nsamples=10000 \
                     --training.jacobian_batch_size=$jac_batch_size \
                     --training.weight_decay=1e-5 \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
@@ -131,11 +134,13 @@ if [ ! -d $destdir ]; then
 fi
 cp -v "$SLURM_TMPDIR/exp_ssl_100.pth" "$destdir/exp_ssl_100_seed_"$seed".pt"
 
+
 src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
+encoder_checkpt="$src_checkpt"
 
 if [ ! -f "$src_checkpt" ];
 then
-    echo "Error: no file not found $src_checkpt"
+    echo "Error: file not found $src_checkpt"
     exit 1
 else
     echo "Copying SSL features to local storage"
@@ -153,6 +158,7 @@ echo "Precaching features"
 # Let's precache features, should take ~35 seconds (rtx8000)
 python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
                     --training.lambd=$lambd --training.projector_dim=$pdim \
+                    --training.datadir=$trainset \
                     --training.projector_depth=$pdepth \
                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                     --training.batch_size=$batch_size --training.model=$model \
@@ -171,6 +177,7 @@ echo "Linear probe training"
 python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml \
                     --training.lambd=$lambd --training.projector_dim=$pdim \
                     --training.projector_depth=$pdepth \
+                    --training.datadir=$trainset \
                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                     --training.batch_size=$batch_size --training.model=$model \
                     --training.seed=$seed \
@@ -211,6 +218,7 @@ for noise in 10 20 40 60 80 100; do
     # Let's precache features, should take ~35 seconds (rtx8000)
     python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
                         --training.lambd=$lambd --training.projector_dim=$pdim \
+                        --training.datadir=$trainset \
                         --training.projector_depth=$pdepth \
                         --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                         --training.batch_size=$batch_size --training.model=$model \
@@ -227,6 +235,7 @@ for noise in 10 20 40 60 80 100; do
     # run linear eval on precached features from model: using default seed 42
     python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml \
                         --training.lambd=$lambd --training.projector_dim=$pdim \
+                        --training.datadir=$trainset \
                         --training.projector_depth=$pdepth \
                         --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                         --training.batch_size=$batch_size --training.model=$model \
@@ -257,7 +266,7 @@ src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/lambd_"$(printf %.6f $la
 
 if [ ! -f "$src_checkpt" ];
 then
-    echo "Error: no file not found $src_checkpt"
+    echo "Error: file not found $src_checkpt"
     exit 1
 else
     echo "Copying SSL features to local storage"
@@ -266,7 +275,7 @@ fi
 
 
 # dataset locations
-if [ "$dataset" = "imagenet100" ]; then
+if [ "$dataset" = "imagenet100c" ]; then
     trainset="${DATA_DIR}"/$pretrain_dataset
     testset="${DATA_DIR}"/$pretrain_dataset
 else
@@ -274,7 +283,7 @@ else
     testset="${DATA_DIR}"/$pretrain_dataset"_test.beton"
 fi
 
-if [ "$dataset" != "imagenet100" ]; then
+if [ "$dataset" != "imagenet100c" ]; then
     # Let's precache features, should take ~35 seconds (rtx8000)
     python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
                         --training.lambd=$lambd --training.projector_dim=$pdim \
@@ -316,23 +325,27 @@ fi
 for noise in ${ood_noise_types[@]}; do
 
     # dataset locations
-    if [ $dataset = 'cifar10c']; then
+    if [ $dataset = 'cifar10c' ]; then
         dataset_str='cifar10-c'
-    elif [ $dataset = 'imagenet100c']; then
+    elif [ $dataset = 'imagenet100c' ]; then
         dataset_str='imagenet100-c'
     else
         dataset_str=$dataset
     fi
 
-    if [ "$dataset" = "imagenet100" ]; then
+    if [ "$dataset" = "imagenet100c" ]; then
         trainset="${DATA_DIR}"/$pretrain_dataset
         testset="${DATA_DIR}"/$dataset_str/$noise
+        echo "Copying encoder features to local storage"
+        cp -v "$encoder_checkpt" "$SLURM_TMPDIR/exp_ssl_200.pth"
+        linear_probe_args="--eval.linear_probe_ckpt=$src_checkpt"
     else
-        trainset="${DATA_DIR}"/$pretrain_dataset"_train.beton "
+        trainset="${DATA_DIR}"/$pretrain_dataset"_train.beton"
         testset="${DATA_DIR}"/$dataset_str/$noise"/test.beton"
+        linear_probe_args=""
     fi
 
-    if [ "$dataset" != "imagenet100" ]; then
+    if [ "$dataset" != "imagenet100c" ]; then
         # Let's precache features, should take ~35 seconds (rtx8000)
         python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
                             --training.lambd=$lambd --training.projector_dim=$pdim \
@@ -353,6 +366,7 @@ for noise in ${ood_noise_types[@]}; do
     # run linear eval on precached features from model: using default seed 42
     python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml \
                         --training.lambd=$lambd --training.projector_dim=$pdim \
+                        --training.datadir=$testset \
                         --training.projector_depth=$pdepth \
                         --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                         --training.batch_size=$batch_size --training.model=$model \
@@ -366,7 +380,8 @@ for noise in ${ood_noise_types[@]}; do
                         --eval.ood_eval=True \
                         --eval.ood_noise_type=$noise \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
-                        --logging.wandb_project=$wandb_projname
+                        --logging.wandb_project=$wandb_projname \
+                        $linear_probe_args
 
     new_status=$?
     status=$((status|new_status))

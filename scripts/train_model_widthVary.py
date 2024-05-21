@@ -462,13 +462,14 @@ def build_model(args=None):
         missing_keys, unexpected_keys = model.load_state_dict(
             torch.load(ckpt_path, map_location="cpu")["model"], strict=strict_loading,
         )
-        assert len(unexpected_keys) == 0, "Error: unexpected model keys: {unexpected_keys}"
+        if len(unexpected_keys) > 0:
+            assert torch.all(torch.as_tensor(['proj' in str(k) for k in unexpected_keys], dtype=torch.bool)), f"Error: unexpected model keys: {unexpected_keys}"
         if len(missing_keys) > 0:
-            assert torch.all(torch.as_tensor(['fc' in str(k) for k in missing_keys], dtype=torch.bool)), "Error: can only load linear probe checkpoints."
+            assert torch.all(torch.as_tensor(['fc' in str(k) for k in missing_keys], dtype=torch.bool)), f"Error: can only load linear probe checkpoints, but the following keys are missing: {missing_keys}"
             print(f"Loading linear probe checkpoint {eval.linear_probe_ckpt}")
-            model.fc.load_state_dict(
-                torch.load(eval.linear_probe_ckpt, map_location="cpu")["model"]["fc"]
-            )
+            linear_state_dict = torch.load(eval.linear_probe_ckpt, map_location="cpu")["model"]
+            state_dict = { str(k).split(".")[1]: val for k, val in linear_state_dict.items() }
+            model.fc.load_state_dict(state_dict)
         
     model = model.to(memory_format=torch.channels_last).cuda()
     return model
@@ -744,7 +745,7 @@ def ood_eval_imagenet(model, dataloader_list, epoch=None, epochs=None):
     model.eval()
 
     corr_strengths = len(dataloader_list)
-    total_correct_1 = torch.zeros(corr_strengths)
+    total_correct_1 = torch.zeros(corr_strengths, device="cuda:0")
     total_correct_5 = torch.zeros_like(total_correct_1)
     
     for l, dataloader in enumerate(dataloader_list):
@@ -755,8 +756,7 @@ def ood_eval_imagenet(model, dataloader_list, epoch=None, epochs=None):
             inp = list(inp)
             # WARNING: every epoch could have different augmentations of images
             target = inp.pop(1)
-            for x in inp:
-                x = x.cuda(non_blocking=True)
+            inp = [ x.cuda(non_blocking=True) for x in inp ]
             target = target.cuda(non_blocking=True)
             total_samples += inp[0].shape[0]
             # total_samples += data.shape[0]
@@ -775,11 +775,11 @@ def ood_eval_imagenet(model, dataloader_list, epoch=None, epochs=None):
             acc_5 = total_correct_5[l].item() / total_samples * 100
             test_bar.set_description(
                 "{} Level: [{}/{}] Epoch: [{}/{}] ACC@1: {:.2f}% ACC@5: {:.2f}%".format(
-                    "Test", l, corr_strengths, epoch, epochs, acc_1, acc_5
+                    "Test", l + 1, corr_strengths, epoch, epochs, acc_1, acc_5
                 )
             )
-    acc_1 = acc_1.cpu().numpy()
-    acc_5 = acc_5.cpu().numpy()
+    acc_1 = total_correct_1.cpu().numpy() / total_samples * 100
+    acc_5 = total_correct_5.cpu().numpy() / total_samples * 100
     return acc_1, acc_5
 
 
@@ -829,7 +829,6 @@ def precache_outputs(model, loaders, args, eval_args):
     trainset_outputs = torch.cat(trainset_outputs)
     trainset_labels = torch.cat(trainset_labels)
     if args.label_noise > 0:
-        breakpoint()
         trainset_ground_truths = torch.cat(trainset_ground_truths)
         trainset_sample_ids = torch.cat(trainset_sample_ids)
         total_corr = noise_ratio / num_samples * 100
