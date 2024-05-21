@@ -1,25 +1,25 @@
 #! /bin/bash
-#SBATCH -A berzelius-2024-116
-#SBATCH --gpus=1
-#SBATCH -t 4:00:00
-#SBATCH --reservation safe
+#SBATCH -A NAISS2023-5-476
+#SBATCH -p alvis
+#SBATCH --gpus-per-node=A100:1
+#SBATCH -t 7:00:00
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
-#SBATCH --output /proj/memorization/logs/%A_%a.out
-#SBATCH --error /proj/memorization/logs/%A_%a.err
+#SBATCH --output /cephyr/users/%u/Alvis/linear-regions/logs/%A_%a.out
+#SBATCH --error /cephyr/users/%u/Alvis/linear-regions/logs/%A_%a.err
 #SBATCH --array 0-173%30
 
 NAME="ssl_simclr_robustness"
 
 # load env
-source scripts/setup_env
+source scripts/setup_env.alvis
 
 if [ -z "$1" ]; then
     echo "Usage: $0 PROJECTOR_DEPTH"
     exit 1
 fi
 
-export SLURM_TMPDIR="/scratch/local/${SLURM_ARRAY_JOB_ID}/${SLURM_ARRAY_TASK_ID}"
+export SLURM_TMPDIR="${TMPDIR}"
 if [ ! -d "$SLURM_TMPDIR" ]; then
     mkdir -p "$SLURM_TMPDIR"
 fi
