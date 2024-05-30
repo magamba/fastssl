@@ -825,22 +825,22 @@ def aggregate_fig4(destdir=plots_path):
 """
 
 figure7_conf = {
-    "algorithms": ["barlow_twins",],
+    "algorithms": ["barlow_twins", "simclr"],
     "base_models": ["resnet18", "vit"],
     "expansion": {
-        "resnet18": 32,
-        "vit": 6,
+        "resnet18": [32,],
+        "vit": [6,],
     },
     "model_strings": {
-        "resnet18": "resnet18/",
-        "vit": "resnet18_",
+        "resnet18": ["resnet18/"],
+        "vit": ["vit_"],
     },
     "widths": {
         "resnet18": {
             "cifar10": list(range(8,65,4)),
         },
         "vit": {
-            "cifar10": list(48,390,2),
+            "cifar10": list(range(8,65,4)),
         },
     },
     "projection_depths": list(range(1,5)),
@@ -884,7 +884,7 @@ figure7_conf.update({
                 model: {
                     pdepth: {
                         width: {
-                            hparam: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model_str}width{width}/2_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}_alpha_ssl_100_seed_{seed}.npy"  for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] 
+                            hparam: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model_str}width{width}/2_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}_alpha_ssl_100_seed_{seed}.npy"  for model_str in figure7_conf["model_strings"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] 
                             ] for hparam in figure7_conf["hyperparams"]["barlow_twins"]
                         } for width in figure7_conf["widths"][model][dataset]
                     } for pdepth in figure7_conf["projection_depths"]
@@ -896,7 +896,7 @@ figure7_conf.update({
                 model: {
                     pdepth: {
                         width: {
-                            hparam: [ f"{root_dir}_simclr_robustness-{dataset}/{model_str}width{width}/2_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_512_lr_0.001_wd_1e-05/results_{dataset}_alpha_SimCLR_100_seed_{seed}.npy"  for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] 
+                            hparam: [ f"{root_dir}_simclr_robustness-{dataset}/{model_str}width{width}/2_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_512_lr_0.001_wd_1e-05/results_{dataset}_alpha_SimCLR_100_seed_{seed}.npy"  for model_str in figure7_conf["model_strings"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] 
                             ] for hparam in figure7_conf["hyperparams"]["simclr"]
                         } for width in figure7_conf["widths"][model][dataset]
                     } for pdepth in figure7_conf["projection_depths"]
@@ -914,8 +914,8 @@ figure7_conf.update({
                     pdepth: {
                         width: {
                             hparam: {
-                                0: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model_str}width{width}/2_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ],
-                                **{noise: [ f"{root_dir}_barlow_twins_robustness_noise{noise}-{dataset}/{model_str}width{width}/2_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ] for noise in figure7_conf["noise_configs"][1:]}
+                                0: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model_str}width{width}/2_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_strings"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ],
+                                **{noise: [ f"{root_dir}_barlow_twins_robustness_noise{noise}-{dataset}/{model_str}width{width}/2_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_strings"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ] for noise in figure7_conf["noise_configs"][1:]}
                             } for hparam in figure7_conf["hyperparams"]["barlow_twins"]
                         } for width in figure7_conf["widths"][model][dataset]
                     } for pdepth in figure7_conf["projection_depths"]
@@ -928,8 +928,8 @@ figure7_conf.update({
                     pdepth: {
                         width: {
                             hparam: {
-                                0: [ f"{root_dir}_simclr_robustness-{dataset}/{model_str}width{width}/2_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_512_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ],
-                                **{noise: [ f"{root_dir}_simclr_robustness_noise{noise}-{dataset}/{model_str}width{width}/2_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_512_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ] for noise in figure7_conf["noise_configs"][1:]}
+                                0: [ f"{root_dir}_simclr_robustness-{dataset}/{model_str}width{width}/2_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_512_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_strings"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ],
+                                **{noise: [ f"{root_dir}_simclr_robustness_noise{noise}-{dataset}/{model_str}width{width}/2_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_512_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_strings"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ] for noise in figure7_conf["noise_configs"][1:]}
                             } for hparam in figure7_conf["hyperparams"]["simclr"]
                         } for width in figure7_conf["widths"][model][dataset]
                     } for pdepth in figure7_conf["projection_depths"]
@@ -947,8 +947,8 @@ figure7_conf.update({
                     pdepth: {
                         width: {
                             hparam: {
-                                0: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model_str}width{width}/2_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ],
-                                **{noise: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model_str}width{width}/2_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}c_{noise}_ood_eval_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ] for noise in figure7_conf["ood_noise_types"]}
+                                0: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model_str}width{width}/2_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_strings"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ],
+                                **{noise: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model_str}width{width}/2_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}c_{noise}_ood_eval_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_strings"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ] for noise in figure7_conf["ood_noise_types"]}
                             } for hparam in figure7_conf["hyperparams"]["barlow_twins"]
                         } for width in figure7_conf["widths"][model][dataset]
                     } for pdepth in figure7_conf["projection_depths"]
@@ -961,8 +961,8 @@ figure7_conf.update({
                     pdepth: {
                         width: {
                             hparam: {
-                                0: [ f"{root_dir}_simclr_robustness-{dataset}/{model_str}width{width}/2_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_512_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ],
-                                **{noise: [ f"{root_dir}_simclr_robustness-{dataset}/{model_str}width{width}/2_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_512_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}c_{noise}_ood_eval_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ] for noise in figure7_conf["ood_noise_types"]}
+                                0: [ f"{root_dir}_simclr_robustness-{dataset}/{model_str}width{width}/2_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_512_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_strings"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ],
+                                **{noise: [ f"{root_dir}_simclr_robustness-{dataset}/{model_str}width{width}/2_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_512_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}c_{noise}_ood_eval_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_strings"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ] for noise in figure7_conf["ood_noise_types"]}
                             } for hparam in figure7_conf["hyperparams"]["simclr"]
                         } for width in figure7_conf["widths"][model][dataset]
                     } for pdepth in figure7_conf["projection_depths"]
@@ -990,12 +990,12 @@ def aggregate_fig7(destdir=plots_path):
         for dataset in figure7_conf["datasets"]:
             plot_data[algorithm][dataset] = {}
             
-            nwidths = len(figure7_conf["widths"][algorithm][dataset])
             nhparams = len(figure7_conf["hyperparams"][algorithm])
             for base_model in figure7_conf["base_models"]:
+                nwidths = len(figure7_conf["widths"][base_model][dataset])
                 plot_data[algorithm][dataset][base_model] = np.zeros((npdepths, nwidths, nhparams, nmetrics, nseeds))
                 for d_id, pdepth in enumerate(figure7_conf["projection_depths"]):
-                    for w_id, width in enumerate(figure7_conf["widths"][algorithm][dataset]):
+                    for w_id, width in enumerate(figure7_conf["widths"][base_model][dataset]):
                         for h_id, hparam in enumerate(figure7_conf["hyperparams"][algorithm]):
                             for s_id in range(nseeds):
                                 fname = figure7_conf["filenames"][algorithm][dataset][base_model][pdepth][width][hparam][s_id]
@@ -1027,13 +1027,13 @@ def aggregate_fig7(destdir=plots_path):
         epoch = figure7_conf["epochs"]["linear"]
         for dataset in figure7_conf["datasets"]:
             performance_data[algorithm][dataset] = {}
-            nwidths = len(figure7_conf["widths"][algorithm][dataset])
             nhparams = len(figure7_conf["hyperparams"][algorithm])
             for base_model in figure7_conf["base_models"]:
+                nwidths = len(figure7_conf["widths"][base_model][dataset])
                 performance_data[algorithm][dataset][base_model] = np.zeros((nnoise, npdepths, nwidths, nhparams, nmetrics, nseeds))
                 for n_id, noise in enumerate(figure7_conf["noise_configs"]):
                     for p_id, pdepth in enumerate(figure7_conf["projection_depths"]):
-                        for w_id, width in enumerate(figure7_conf["widths"][algorithm][dataset]):
+                        for w_id, width in enumerate(figure7_conf["widths"][base_model][dataset]):
                             for h_id, hparam in enumerate(figure7_conf["hyperparams"][algorithm]):
                                 for s_id in range(nseeds):
                                     fname = figure7_conf["performance_filenames"][algorithm][dataset][base_model][pdepth][width][hparam][noise][s_id]
@@ -1067,13 +1067,13 @@ def aggregate_fig7(destdir=plots_path):
         ood_data[algorithm] = {}
         for dataset in figure7_conf["datasets"]:
             ood_data[algorithm][dataset] = {}
-            nwidths = len(figure7_conf["widths"][algorithm][dataset])
             nhparams = len(figure7_conf["hyperparams"][algorithm])
             for base_model in figure7_conf["base_models"]:
+                nwidths = len(figure7_conf["widths"][base_model][dataset])
                 ood_data[algorithm][dataset][base_model] = np.zeros((nnoise, npdepths, nwidths, nhparams, nmetrics, nseeds, nlevels))
                 for n_id, noise in enumerate([0] + figure7_conf["ood_noise_types"]):
                     for p_id, pdepth in enumerate(figure7_conf["projection_depths"]):
-                        for w_id, width in enumerate(figure7_conf["widths"][algorithm][dataset]):
+                        for w_id, width in enumerate(figure7_conf["widths"][base_model][dataset]):
                             for h_id, hparam in enumerate(figure7_conf["hyperparams"][algorithm]):
                                 for s_id in range(nseeds):
                                     file_dict = "performance_filenames" if n_id == 0 else "ood_filenames"
