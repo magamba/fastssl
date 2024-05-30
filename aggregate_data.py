@@ -826,19 +826,32 @@ def aggregate_fig4(destdir=plots_path):
 
 figure7_conf = {
     "algorithms": ["barlow_twins",],
-    "base_models": ["resnet18",],
+    "base_models": ["resnet18", "vit"],
+    "expansion": {
+        "resnet18": 32,
+        "vit": 6,
+    },
+    "model_strings": {
+        "resnet18": "resnet18/",
+        "vit": "resnet18_",
+    },
     "widths": {
-        "barlow_twins": {
+        "resnet18": {
             "cifar10": list(range(8,65,4)),
+        },
+        "vit": {
+            "cifar10": list(48,390,2),
         },
     },
     "projection_depths": list(range(1,5)),
     "hyperparams": {
         "barlow_twins": [ 0.0001, 0.0002, 0.0004, 0.001, 0.002, 0.005, 0.01,], # 0.02 ],
+        "simclr": [0.005, 0.02, 0.05, 0.1, 0.2, 0.5],
     },
     "seeds" : [0,],
     "epochs": {
         "barlow_twins": 100,
+        "simclr": 100,
         "linear": 200,
     },
     "noise_configs": [0, 10, 20, 40, 60, 80, 100],
@@ -871,9 +884,21 @@ figure7_conf.update({
                 model: {
                     pdepth: {
                         width: {
-                            hparam: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model}/width{width}/2_augs/lambd_{hparam:.6f}_pdim_{32 * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}_alpha_ssl_100_seed_{seed}.npy"  for seed in figure7_conf["seeds"] 
+                            hparam: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model_str}width{width}/2_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}_alpha_ssl_100_seed_{seed}.npy"  for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] 
                             ] for hparam in figure7_conf["hyperparams"]["barlow_twins"]
-                        } for width in figure7_conf["widths"]["barlow_twins"][dataset]
+                        } for width in figure7_conf["widths"][model][dataset]
+                    } for pdepth in figure7_conf["projection_depths"]
+                } for model in figure7_conf["base_models"]
+            } for dataset in figure7_conf["datasets"]
+        },
+        "simclr": {
+            dataset: {
+                model: {
+                    pdepth: {
+                        width: {
+                            hparam: [ f"{root_dir}_simclr_robustness-{dataset}/{model_str}width{width}/2_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_512_lr_0.001_wd_1e-05/results_{dataset}_alpha_SimCLR_100_seed_{seed}.npy"  for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] 
+                            ] for hparam in figure7_conf["hyperparams"]["simclr"]
+                        } for width in figure7_conf["widths"][model][dataset]
                     } for pdepth in figure7_conf["projection_depths"]
                 } for model in figure7_conf["base_models"]
             } for dataset in figure7_conf["datasets"]
@@ -889,10 +914,24 @@ figure7_conf.update({
                     pdepth: {
                         width: {
                             hparam: {
-                                0: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model}/width{width}/2_augs/lambd_{hparam:.6f}_pdim_{32 * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure7_conf["seeds"] ],
-                                **{noise: [ f"{root_dir}_barlow_twins_robustness_noise{noise}-{dataset}/{model}/width{width}/2_augs/lambd_{hparam:.6f}_pdim_{32 * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure7_conf["seeds"] ] for noise in figure7_conf["noise_configs"][1:]}
+                                0: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model_str}width{width}/2_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ],
+                                **{noise: [ f"{root_dir}_barlow_twins_robustness_noise{noise}-{dataset}/{model_str}width{width}/2_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ] for noise in figure7_conf["noise_configs"][1:]}
                             } for hparam in figure7_conf["hyperparams"]["barlow_twins"]
-                        } for width in figure7_conf["widths"]["barlow_twins"][dataset]
+                        } for width in figure7_conf["widths"][model][dataset]
+                    } for pdepth in figure7_conf["projection_depths"]
+                } for model in figure7_conf["base_models"]
+            } for dataset in figure7_conf["datasets"]
+        },
+        "simclr": {
+            dataset: {
+                model: {
+                    pdepth: {
+                        width: {
+                            hparam: {
+                                0: [ f"{root_dir}_simclr_robustness-{dataset}/{model_str}width{width}/2_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_512_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ],
+                                **{noise: [ f"{root_dir}_simclr_robustness_noise{noise}-{dataset}/{model_str}width{width}/2_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_512_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ] for noise in figure7_conf["noise_configs"][1:]}
+                            } for hparam in figure7_conf["hyperparams"]["simclr"]
+                        } for width in figure7_conf["widths"][model][dataset]
                     } for pdepth in figure7_conf["projection_depths"]
                 } for model in figure7_conf["base_models"]
             } for dataset in figure7_conf["datasets"]
@@ -908,10 +947,24 @@ figure7_conf.update({
                     pdepth: {
                         width: {
                             hparam: {
-                                0: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model}/width{width}/2_augs/lambd_{hparam:.6f}_pdim_{32 * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure7_conf["seeds"] ],
-                                **{noise: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model}/width{width}/2_augs/lambd_{hparam:.6f}_pdim_{32 * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}c_{noise}_ood_eval_linear_200_seed_{seed}.npy"  for seed in figure7_conf["seeds"] ] for noise in figure7_conf["ood_noise_types"]}
+                                0: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model_str}width{width}/2_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ],
+                                **{noise: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model_str}width{width}/2_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}c_{noise}_ood_eval_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ] for noise in figure7_conf["ood_noise_types"]}
                             } for hparam in figure7_conf["hyperparams"]["barlow_twins"]
-                        } for width in figure7_conf["widths"]["barlow_twins"][dataset]
+                        } for width in figure7_conf["widths"][model][dataset]
+                    } for pdepth in figure7_conf["projection_depths"]
+                } for model in figure7_conf["base_models"]
+            } for dataset in figure7_conf["datasets"]
+        },
+        "simclr": {
+            dataset: {
+                model: {
+                    pdepth: {
+                        width: {
+                            hparam: {
+                                0: [ f"{root_dir}_simclr_robustness-{dataset}/{model_str}width{width}/2_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_512_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ],
+                                **{noise: [ f"{root_dir}_simclr_robustness-{dataset}/{model_str}width{width}/2_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_512_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}c_{noise}_ood_eval_linear_200_seed_{seed}.npy" for model_str in figure7_conf["model_str"][model] for base_width in figure7_conf["expansion"][model] for seed in figure7_conf["seeds"] ] for noise in figure7_conf["ood_noise_types"]}
+                            } for hparam in figure7_conf["hyperparams"]["simclr"]
+                        } for width in figure7_conf["widths"][model][dataset]
                     } for pdepth in figure7_conf["projection_depths"]
                 } for model in figure7_conf["base_models"]
             } for dataset in figure7_conf["datasets"]
