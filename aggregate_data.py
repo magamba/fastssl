@@ -824,7 +824,7 @@ def aggregate_fig4(destdir=plots_path):
     metrics
 """
 
-figure5_conf = {
+figure7_conf = {
     "algorithms": ["barlow_twins",],
     "base_models": ["resnet18",],
     "widths": {
@@ -834,7 +834,7 @@ figure5_conf = {
     },
     "projection_depths": list(range(1,5)),
     "hyperparams": {
-        "barlow_twins": [ 0.0001, 0.0002, 0.0004, 0.001, 0.002, 0.005, 0.01, 0.02 ],
+        "barlow_twins": [ 0.0001, 0.0002, 0.0004, 0.001, 0.002, 0.005, 0.01,], # 0.02 ],
     },
     "seeds" : [0,],
     "epochs": {
@@ -864,24 +864,24 @@ figure5_conf = {
     "metrics": ["train_loss", "alpha", "feature_input_jacobian", "rankme", "intra_manifold_eigen", "inter_manifold_eigen"],
 }
 
-figure5_conf.update({
+figure7_conf.update({
     "filenames": {
         "barlow_twins": {
             dataset: {
                 model: {
                     pdepth: {
                         width: {
-                            hparam: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model}/width{width}/2_augs/lambd_{hparam:.6f}_pdim_{32 * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}_alpha_ssl_100_seed_{seed}.npy"  for seed in figure5_conf["seeds"] 
-                            ] for hparam in figure5_conf["hyperparams"]["barlow_twins"]
-                        } for width in figure5_conf["widths"]["barlow_twins"][dataset]
-                    } for pdepth in figure5_conf["projection_depths"]
-                } for model in figure5_conf["base_models"]
-            } for dataset in figure5_conf["datasets"]
+                            hparam: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model}/width{width}/2_augs/lambd_{hparam:.6f}_pdim_{32 * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}_alpha_ssl_100_seed_{seed}.npy"  for seed in figure7_conf["seeds"] 
+                            ] for hparam in figure7_conf["hyperparams"]["barlow_twins"]
+                        } for width in figure7_conf["widths"]["barlow_twins"][dataset]
+                    } for pdepth in figure7_conf["projection_depths"]
+                } for model in figure7_conf["base_models"]
+            } for dataset in figure7_conf["datasets"]
         },
     },
 })
 
-figure5_conf.update({
+figure7_conf.update({
     "performance_filenames": {
         "barlow_twins": {
             dataset: {
@@ -889,19 +889,18 @@ figure5_conf.update({
                     pdepth: {
                         width: {
                             hparam: {
-                                0: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model}/width{width}/2_augs/lambd_{hparam:.6f}_pdim_{32 * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure5_conf["seeds"] ],
-                                **{noise: [ f"{root_dir}_barlow_twins_robustness_noise{noise}-{dataset}/{model}/width{width}/2_augs/lambd_{hparam:.6f}_pdim_{32 * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure5_conf["seeds"] ]
-                                } for noise in figure5_conf["noise_configs"][1:]}
-                            } for hparam in figure5_conf["hyperparams"]["barlow_twins"]
-                        } for width in figure5_conf["widths"]["barlow_twins"][dataset]
-                    } for pdepth in figure5_conf["projection_depths"]
-                } for model in figure5_conf["base_models"]
-            } for dataset in figure5_conf["datasets"]
+                                0: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model}/width{width}/2_augs/lambd_{hparam:.6f}_pdim_{32 * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure7_conf["seeds"] ],
+                                **{noise: [ f"{root_dir}_barlow_twins_robustness_noise{noise}-{dataset}/{model}/width{width}/2_augs/lambd_{hparam:.6f}_pdim_{32 * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure7_conf["seeds"] ] for noise in figure7_conf["noise_configs"][1:]}
+                            } for hparam in figure7_conf["hyperparams"]["barlow_twins"]
+                        } for width in figure7_conf["widths"]["barlow_twins"][dataset]
+                    } for pdepth in figure7_conf["projection_depths"]
+                } for model in figure7_conf["base_models"]
+            } for dataset in figure7_conf["datasets"]
         },
     },
 })
 
-figure5_conf.update({
+figure7_conf.update({
     "ood_filenames": {
         "barlow_twins": {
             dataset: {
@@ -909,53 +908,52 @@ figure5_conf.update({
                     pdepth: {
                         width: {
                             hparam: {
-                                0: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model}/width{width}/2_augs/lambd_{hparam:.6f}_pdim_{32 * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure5_conf["seeds"] ],
-                                **{noise: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model}/width{width}/2_augs/lambd_{hparam:.6f}_pdim_{32 * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}c_{noise}_ood_eval_linear_200_seed_{seed}.npy"  for seed in figure5_conf["seeds"] ]
-                                } for noise in figure5_conf["ood_noise_types"]}
-                            } for hparam in figure5_conf["hyperparams"]["barlow_twins"]
-                        } for width in figure5_conf["widths"]["barlow_twins"][dataset]
-                    } for pdepth in figure5_conf["projection_depths"]
-                } for model in figure5_conf["base_models"]
-            } for dataset in figure5_conf["datasets"]
+                                0: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model}/width{width}/2_augs/lambd_{hparam:.6f}_pdim_{32 * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy"  for seed in figure7_conf["seeds"] ],
+                                **{noise: [ f"{root_dir}_barlow_twins_robustness-{dataset}/{model}/width{width}/2_augs/lambd_{hparam:.6f}_pdim_{32 * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}c_{noise}_ood_eval_linear_200_seed_{seed}.npy"  for seed in figure7_conf["seeds"] ] for noise in figure7_conf["ood_noise_types"]}
+                            } for hparam in figure7_conf["hyperparams"]["barlow_twins"]
+                        } for width in figure7_conf["widths"]["barlow_twins"][dataset]
+                    } for pdepth in figure7_conf["projection_depths"]
+                } for model in figure7_conf["base_models"]
+            } for dataset in figure7_conf["datasets"]
         },
     },
 })
 
 
 missing_runs = []
-def aggregate_fig5(destdir=plots_path):
-    """ Aggregate results for figure 5
+def aggregate_fig7(destdir=plots_path):
+    """ Aggregate results for figure 7
     """
-    nseeds = len(figure5_conf["seeds"])
-    nmetrics = len(figure5_conf["metrics"])
-    nnoise = len(figure5_conf["noise_configs"])
-    npdepths = len(figure5_conf["projection_depths"])
+    nseeds = len(figure7_conf["seeds"])
+    nmetrics = len(figure7_conf["metrics"])
+    nnoise = len(figure7_conf["noise_configs"])
+    npdepths = len(figure7_conf["projection_depths"])
     
-    figure5_data = figure5_conf
+    figure7_data = figure7_conf
 
     plot_data = {}
-    for algorithm in figure5_conf["algorithms"]:
+    for algorithm in figure7_conf["algorithms"]:
         plot_data[algorithm] = {}
-        for dataset in figure5_conf["datasets"]:
+        for dataset in figure7_conf["datasets"]:
             plot_data[algorithm][dataset] = {}
             
-            nwidths = len(figure5_conf["widths"][algorithm][dataset])
-            nhparams = len(figure5_conf["hparams"][algorithm])
-            for base_model in figure5_conf["base_models"]:
+            nwidths = len(figure7_conf["widths"][algorithm][dataset])
+            nhparams = len(figure7_conf["hyperparams"][algorithm])
+            for base_model in figure7_conf["base_models"]:
                 plot_data[algorithm][dataset][base_model] = np.zeros((npdepths, nwidths, nhparams, nmetrics, nseeds))
-                for d_id, pdepth in enumerate(figure5_conf["projection_depths"]):
-                    for w_id, width in enumerate(figure5_conf["widths"][algorithm][dataset]):
-                        for h_id, hparam in enumerate(figure5_conf["hyperparams"][algorithm]):
+                for d_id, pdepth in enumerate(figure7_conf["projection_depths"]):
+                    for w_id, width in enumerate(figure7_conf["widths"][algorithm][dataset]):
+                        for h_id, hparam in enumerate(figure7_conf["hyperparams"][algorithm]):
                             for s_id in range(nseeds):
-                                fname = figure5_conf["filenames"][algorithm][dataset][base_model][pdepth][width][hparam][s_id]
+                                fname = figure7_conf["filenames"][algorithm][dataset][base_model][pdepth][width][hparam][s_id]
                                 logger.info(f"Loading {fname}")
                                 try:
                                     stats = np.load(
                                         fname,
                                         allow_pickle=True
                                     ).tolist()
-                                    for m_id, metric in enumerate(figure5_conf["metrics"]):
-                                        epoch = figure5_conf["epochs"][algorithm]
+                                    for m_id, metric in enumerate(figure7_conf["metrics"]):
+                                        epoch = figure7_conf["epochs"][algorithm]
                                         logger.info(f"Parsing {base_model}_{width} pdepth {pdepth} hparam {hparam} epoch {epoch} {metric} seed {s_id}")
                                         plot_data[algorithm][dataset][base_model][d_id, w_id, h_id, m_id, s_id] = parse_stats(fname, stats, metric, epoch)
                                         
@@ -966,33 +964,33 @@ def aggregate_fig5(destdir=plots_path):
                 plot_data[algorithm][dataset][base_model] = \
                     plot_data[algorithm][dataset][base_model].tolist()
         
-    figure5_data.pop("filenames")
-    figure5_data["plot_data"] = plot_data
+    figure7_data.pop("filenames")
+    figure7_data["plot_data"] = plot_data
     
-    nmetrics = len(figure5_conf["performance_metrics"])
+    nmetrics = len(figure7_conf["performance_metrics"])
     performance_data = {}
-    for algorithm in figure5_conf["algorithms"]:
+    for algorithm in figure7_conf["algorithms"]:
         performance_data[algorithm] = {}
-        epoch = figure5_conf["epochs"]["linear"]
-        for dataset in figure5_conf["datasets"]:
+        epoch = figure7_conf["epochs"]["linear"]
+        for dataset in figure7_conf["datasets"]:
             performance_data[algorithm][dataset] = {}
-            nwidths = len(figure5_conf["widths"][algorithm][dataset])
-            nhparams = len(figure5_conf["hparams"][algorithm])
-            for base_model in figure5_conf["base_models"]:
+            nwidths = len(figure7_conf["widths"][algorithm][dataset])
+            nhparams = len(figure7_conf["hyperparams"][algorithm])
+            for base_model in figure7_conf["base_models"]:
                 performance_data[algorithm][dataset][base_model] = np.zeros((nnoise, npdepths, nwidths, nhparams, nmetrics, nseeds))
-                for n_id, noise in enumerate(figure5_conf["noise_configs"]):
-                    for p_id, pdepth in enumerate(figure5_conf["projection_depths"]):
-                        for w_id, width in enumerate(figure5_conf["widths"][algorithm][dataset]):
-                            for h_id, hparam in enumerate(figure5_conf["hyperparams"][algorithm]):
+                for n_id, noise in enumerate(figure7_conf["noise_configs"]):
+                    for p_id, pdepth in enumerate(figure7_conf["projection_depths"]):
+                        for w_id, width in enumerate(figure7_conf["widths"][algorithm][dataset]):
+                            for h_id, hparam in enumerate(figure7_conf["hyperparams"][algorithm]):
                                 for s_id in range(nseeds):
-                                    fname = figure5_conf["performance_filenames"][algorithm][dataset][base_model][pdepth][width][hparam][noise][s_id]
+                                    fname = figure7_conf["performance_filenames"][algorithm][dataset][base_model][pdepth][width][hparam][noise][s_id]
                                     logger.info(f"Loading {fname}")
                                     try:
                                         stats = np.load(
                                             fname,
                                             allow_pickle=True
                                         ).tolist()
-                                        for m_id, metric in enumerate(figure5_conf["performance_metrics"]):
+                                        for m_id, metric in enumerate(figure7_conf["performance_metrics"]):
                                             if noise == 0 and metric in ["train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored"]: continue
                                             logger.info(f"Parsing {base_model}_{width} epoch {epoch} {metric} seed {s_id}")
                                             performance_data[algorithm][dataset][base_model][n_id, p_id, w_id, h_id, m_id, s_id] = parse_stats(
@@ -1006,33 +1004,34 @@ def aggregate_fig5(destdir=plots_path):
                 performance_data[algorithm][dataset][base_model] = \
                     performance_data[algorithm][dataset][base_model].tolist()
     
-    figure5_data["performance_data"] = performance_data
+    figure7_data["performance_data"] = performance_data
     
-    nmetrics = len(figure5_conf["ood_metrics"])
+    nmetrics = len(figure7_conf["ood_metrics"])
     ood_data = {}
-    nlevels = len(figure5_conf["ood_noise_levels"])
-    for algorithm in figure5_conf["algorithms"]:
+    nnoise = len(figure7_conf["ood_noise_types"]) +1
+    nlevels = len(figure7_conf["ood_noise_levels"])
+    for algorithm in figure7_conf["algorithms"]:
         ood_data[algorithm] = {}
-        for dataset in figure5_conf["datasets"]:
+        for dataset in figure7_conf["datasets"]:
             ood_data[algorithm][dataset] = {}
-            nwidths = len(figure5_conf["widths"][algorithm][dataset])
-            nhparams = len(figure5_conf["hparams"][algorithm])
-            for base_model in figure5_conf["base_models"]:
+            nwidths = len(figure7_conf["widths"][algorithm][dataset])
+            nhparams = len(figure7_conf["hyperparams"][algorithm])
+            for base_model in figure7_conf["base_models"]:
                 ood_data[algorithm][dataset][base_model] = np.zeros((nnoise, npdepths, nwidths, nhparams, nmetrics, nseeds, nlevels))
-                for n_id, noise in enumerate([0] + figure5_conf["noise_configs"]):
-                    for p_id, pdepth in enumerate(figure5_conf["projection_depths"]):
-                        for w_id, width in enumerate(figure5_conf["widths"][algorithm][dataset]):
-                            for h_id, hparam in enumerate(figure5_conf["hyperparams"][algorithm]):
+                for n_id, noise in enumerate([0] + figure7_conf["ood_noise_types"]):
+                    for p_id, pdepth in enumerate(figure7_conf["projection_depths"]):
+                        for w_id, width in enumerate(figure7_conf["widths"][algorithm][dataset]):
+                            for h_id, hparam in enumerate(figure7_conf["hyperparams"][algorithm]):
                                 for s_id in range(nseeds):
                                     file_dict = "performance_filenames" if n_id == 0 else "ood_filenames"
-                                    fname = figure5_conf[file_dict][algorithm][dataset][base_model][pdepth][width][hparam][noise][s_id]
+                                    fname = figure7_conf[file_dict][algorithm][dataset][base_model][pdepth][width][hparam][noise][s_id]
                                     logger.info(f"Loading {fname}")
                                     try:
                                         stats = np.load(
                                             fname,
                                             allow_pickle=True
                                         ).tolist()
-                                        for m_id, metric in enumerate(figure5_conf["ood_metrics"]):
+                                        for m_id, metric in enumerate(figure7_conf["ood_metrics"]):
                                             if noise == 0 and metric in ["train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored"]: continue
                                             logger.info(f"Parsing noise {noise} {base_model}_{width} epoch {epoch} {metric} seed {s_id}")
                                             if n_id == 0:
@@ -1051,9 +1050,9 @@ def aggregate_fig5(destdir=plots_path):
                 ood_data[algorithm][dataset][base_model] = \
                     ood_data[algorithm][dataset][base_model].tolist()
     
-    figure5_data.pop("performance_filenames")
-    figure5_data.pop("ood_filenames")
-    figure5_data["ood_data"] = ood_data
+    figure7_data.pop("performance_filenames")
+    figure7_data.pop("ood_filenames")
+    figure7_data["ood_data"] = ood_data
 
     if len(missing_runs) > 0:
         logger.info("The following files were missing:")
@@ -1063,7 +1062,7 @@ def aggregate_fig5(destdir=plots_path):
     filename = os.path.join(destdir, 'plot_data.json')
     logger.info(f"Saving plot data to {filename}")
     with open(filename, 'w') as fp:
-        json.dump(figure5_data, fp, allow_nan=False)
+        json.dump(figure7_data, fp, allow_nan=False)
 
 
 """Main
@@ -1092,11 +1091,11 @@ def aggregate_stats(fig_id):
         if not os.path.exists(destdir):
             os.makedirs(destdir)
         aggregate_fig4(destdir)
-    elif fig_id == 5:
-        destdir = os.path.join(plots_path, 'figure5')
+    elif fig_id == 7:
+        destdir = os.path.join(plots_path, 'figure7')
         if not os.path.exists(destdir):
             os.makedirs(destdir)
-        aggregate_fig5(destdir)
+        aggregate_fig7(destdir)
     else:
         raise ValueError(f"Invalid figure id {fig_id}")
 
@@ -1131,7 +1130,7 @@ def main():
     global logger
     logger = logging.getLogger()
 
-    for fig_id in [5]:
+    for fig_id in [7]:
         aggregate_stats(fig_id)
 
 
