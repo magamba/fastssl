@@ -19,9 +19,9 @@ write_dataset = True
 noise_level = 0
 subsample_classes = False # if enabled, generates a reduced version of the dataset, with only a few classes sampled
 unseen_classes = False # if true, sample classes from a secondary list
-samples_per_class = 0 # 0.2 0.4 0.6 0.8
+samples_per_class = 0 # 0.2 0.4 0.6 0.8, set to 0 to include all samples
 
-noise_type = "zoom_blur"
+noise_type = ""
 ood_noise_types = [
     "brightness",
     "defocus_blur",
@@ -121,7 +121,7 @@ def subsample_dataset(dataset, classes_to_keep, samples_per_class, train=False):
     for i, mask in enumerate(mask_per_class):
         if train and samples_per_class > 0:
             if int(samples_per_class) == 0:
-                samples_per_class = np.round(samples_per_class * len(targets))
+                samples_per_class = int(np.round(samples_per_class * len(targets) / len(dataset.classes)))
             cut_idx = np.where(mask)[0][samples_per_class]
             mask[cut_idx:] = False
         mask_per_class[i] = mask
@@ -228,7 +228,7 @@ elif dataset=='stl10':
     testset = torchvision.datasets.STL10(
         root=dataset_folder, split='test', download=False, transform=None)
 
-dataset_str = f"{dataset}_" if noise_level == 0 and not subsample_classes and dataset != "cifar10c" else ""
+dataset_str = f"{dataset}_" if noise_level == 0 and not subsample_classes and not samples_per_class and dataset != "cifar10c" else ""
 train_beton_fpath = os.path.join(ffcv_folder, dataset_str + "train.beton")
 test_beton_fpath = os.path.join(ffcv_folder, dataset_str + "test.beton")
 
@@ -469,7 +469,7 @@ if noise_level > 0:
 #     oldnoise=$n; \
 #     python write_ffcv_datasets.py; \
 # done; \
-# sed_string="0,/noise_level = $oldnoise""//{s/noise_level = $oldnoise""/noise_level = 5/}"; \
+# sed_string="0,/noise_level = $oldnoise""/{s/noise_level = $oldnoise""/noise_level = 5/}"; \
 # echo "Sed string: $sed_string"; \
 # sed -i "$sed_string" write_ffcv_datasets.py; \
 # unset oldnoise sed_string n;
