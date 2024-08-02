@@ -19,6 +19,7 @@ write_dataset = True
 noise_level = 0
 subsample_classes = False # if enabled, generates a reduced version of the dataset, with only a few classes sampled
 unseen_classes = False # if true, sample classes from a secondary list
+samples_per_class = 0 # 0.2 0.4 0.6 0.8
 
 noise_type = "zoom_blur"
 ood_noise_types = [
@@ -46,7 +47,8 @@ ood_noise_types = [
 if unseen_classes:
     assert subsample_classes, "Error: subsample_classes must be True when unseen_classes is True"
 
-dataset = 'cifar10c'
+# dataset = 'cifar10c'
+dataset = 'cifar10'
 #if dataset=='cifar10':
 #	dataset_folder = '/network/datasets/cifar10.var/cifar10_torchvision/'
 #	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar10'
@@ -59,10 +61,10 @@ dataset = 'cifar10c'
 
 if unseen_classes:
     classes_to_keep = ['ship', 'horse']
-else:
+elif subsample_classes:
     classes_to_keep = ['automobile', 'dog'] #, 'ship']
-
-samples_per_class = 0 # 1500
+else:
+    classes_to_keep = None
 
 dataset_folder = os.environ.get("DATA_DIR")
 if dataset_folder is None:
@@ -75,10 +77,13 @@ if unseen_classes:
 elif subsample_classes:
     folder_name += "-subsampled_2"
 
+if samples_per_class > 0:
+    folder_name += f"-nsamples_{samples_per_class}"
+
 if noise_level>0:
     folder_name += "-Noise_{}".format(int(noise_level))
 
-if subsample_classes or noise_level > 0 or noise_type != "":
+if subsample_classes or noise_level > 0 or noise_type != "" or samples_per_class > 0:
     ffcv_folder = os.path.join(ffcv_folder, folder_name)
 
 if dataset == "cifar10c":
@@ -104,6 +109,9 @@ def with_indices(datasetclass):
 def subsample_dataset(dataset, classes_to_keep, samples_per_class, train=False):
     """ Subsample classes from dataset and return a modified dataset (in-place)
     """
+    if classes_to_keep is None:
+        # if samples_per_class is a float < 1, keep all classes
+        classes_to_keep = dataset.classes
     class_idx = { c: dataset.class_to_idx[c] for c in classes_to_keep }
     targets = np.asarray(dataset.targets)
 
@@ -112,6 +120,8 @@ def subsample_dataset(dataset, classes_to_keep, samples_per_class, train=False):
     samples_mask = np.zeros_like(mask_per_class[0])
     for i, mask in enumerate(mask_per_class):
         if train and samples_per_class > 0:
+            if int(samples_per_class) == 0:
+                samples_per_class = np.round(samples_per_class * len(targets))
             cut_idx = np.where(mask)[0][samples_per_class]
             mask[cut_idx:] = False
         mask_per_class[i] = mask
@@ -228,8 +238,11 @@ if write_dataset:
     for name,ds in datasets.items():
         if dataset == "cifar10c" and name == "train": continue
         #breakpoint()
-        if dataset == "cifar10" and subsample_classes:
-            ds = subsample_dataset(ds, classes_to_keep, samples_per_class, train= name == "train")
+        if dataset == "cifar10":
+            if subsample_classes:
+                ds = subsample_dataset(ds, classes_to_keep, samples_per_class, train= name == "train")
+            elif samples_per_class > 0 and name == "train":
+                ds = subsample_dataset(ds, classes_to_keep, samples_per_class, train= name == "train")
         
         if name == 'train' and noise_level>0:
             try:
@@ -318,6 +331,8 @@ if dataset=='cifar10':
     if subsample_classes:
         trainset = subsample_dataset(trainset, classes_to_keep, samples_per_class, train=True)
         testset = subsample_dataset(testset, classes_to_keep, samples_per_class)
+    elif samples_per_class > 0:
+        trainset = subsample_dataset(trainset, classes_to_keep, samples_per_class, train=True)
 elif dataset=='cifar100':
     dataset_cls = torchvision.datasets.CIFAR100
     if noise_level > 0:
