@@ -1,13 +1,14 @@
 #! /bin/bash
 #SBATCH -A berzelius-2024-123
 #SBATCH --gpus=1
-#SBATCH -t 6:00:00
-#SBATCH --reservation 1g.10gb
+#SBATCH -t 3:00:00
+#SBATCH -C thin
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /proj/memorization/logs/%A_%a.out
 #SBATCH --error /proj/memorization/logs/%A_%a.err
-#SBATCH --array 0-119%30
+#SBATCH --array 75-89
+#####SBATCH --array 0-119%30
 
 NAME="ssl_barlow_twins_robustness"
 
@@ -15,7 +16,7 @@ NAME="ssl_barlow_twins_robustness"
 source scripts/setup_env
 
 if [ -z "$1" ]; then
-    echo "Usage: $0 PROJECTOR_DEPTH"
+    echo "Usage: $0 PROJECTOR_DEPTH [DATASET_SIZE_RATIO]"
     exit 1
 fi
 
@@ -41,10 +42,22 @@ else
     ckpt_str="-cifar10"
 fi
 
+PRETRAIN="True" # empty string to disable
+LINEAR_EVAL="" # empty string to disable
+NOISY_EVAL="" # empty string to disable
+OOD_EVAL="" # empty string to disable
+
 lambdas=(0.0001 0.0002 0.0004 0.001 0.002 0.005 0.01 0.02)
 #pdepths=(1 2 3 4)
 widths=({8..64..4})
 pdepth=$1
+dsize=$2
+
+if [ "$dsize" == "" ]; then
+    dsize=0
+else
+    ckpt_str="$ckpt_str""-nsamples_""$dsize"
+fi
 
 ood_noise_types=(
     "frost"
@@ -72,6 +85,11 @@ seed=0
 num_workers=16
 pdim=$(($width * 32))
 
+#if [ $width -lt 40 ]; then
+#    echo "This run completed successfully."
+#    exit 0
+#fi
+
 wandb_group='smoothness'
 
 model=resnet18proj_width${width}
@@ -87,8 +105,14 @@ then
 fi
 
 # dataset locations
-trainset="${DATA_DIR}"/$dataset
-testset="${DATA_DIR}"/$dataset
+testset="${DATA_DIR}"/$dataset"_test.beton"
+if [ "$dsize" != "0" ]; then
+    trainset="${DATA_DIR}"/$dataset"-nsamples_$dsize"/train.beton
+else
+    trainset="${DATA_DIR}"/"$dataset"_train.beton
+fi
+
+if [ "$PRETRAIN" != "" ]; then
 
 echo "Pretraining model"
 
@@ -99,8 +123,8 @@ python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.ya
                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                     --training.batch_size=$batch_size --training.model=$model \
                     --training.seed=$seed \
-                    --training.train_dataset=${trainset}_train.beton \
-                    --training.val_dataset=${testset}_test.beton \
+                    --training.train_dataset=${trainset} \
+                    --training.val_dataset=${testset} \
                     --training.num_workers=$num_workers \
                     --training.log_interval=20 \
                     --training.track_alpha=True \
@@ -120,6 +144,8 @@ if [ ! -d $destdir ]; then
 fi
 cp -v "$SLURM_TMPDIR/exp_ssl_100.pth" "$destdir/exp_ssl_100_seed_"$seed".pt"
 
+fi # end pretrain
+
 src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
@@ -136,6 +162,8 @@ status=$((status|new_status))
 
 model=resnet18feat_width${width}
 
+
+if [ "$LINEAR_EVAL" != "" ]; then
 echo "Precaching features"
 
 # running eval for 0 label noise
@@ -147,8 +175,8 @@ python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
                     --training.batch_size=$batch_size --training.model=$model \
                     --training.seed=$seed \
                     --training.num_workers=$num_workers \
-                    --training.train_dataset=${trainset}_train.beton \
-                    --training.val_dataset=${testset}_test.beton \
+                    --training.train_dataset=${trainset} \
+                    --training.val_dataset=${testset} \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
 new_status=$?
@@ -164,8 +192,8 @@ python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml
                     --training.batch_size=$batch_size --training.model=$model \
                     --training.seed=$seed \
                     --training.num_workers=$num_workers \
-                    --training.train_dataset=${trainset}_train.beton \
-                    --training.val_dataset=${testset}_test.beton \
+                    --training.train_dataset=${trainset} \
+                    --training.val_dataset=${testset} \
                     --training.log_interval=10 \
                     --training.track_jacobian=True \
                     --training.jacobian_batch_size=512 \
@@ -174,6 +202,9 @@ python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml
 new_status=$?
 status=$((status|new_status))
 
+fi # end linear eval
+
+if [ "$NOISY_EVAL" != "" ]; then
 
 echo "Noisy labels training"
 
@@ -189,8 +220,12 @@ for noise in 10 20 40 60 80 100; do
     fi
 
     # dataset locations
-    trainset="${DATA_DIR}"/$dataset"-Noise_"$noise
-    testset="${DATA_DIR}"/$dataset
+    testset="${DATA_DIR}"/$dataset"_test.beton"
+    if [ "$dsize" != "" ]; then
+        trainset="${DATA_DIR}"/$dataset"-nsamples_"$dsize"-Noise_"$noise"/train.beton"
+    else
+        trainset="${DATA_DIR}"/$dataset"-Noise_"$noise"/train.beton"
+    fi
 
     # Let's precache features, should take ~35 seconds (rtx8000)
     python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
@@ -200,8 +235,8 @@ for noise in 10 20 40 60 80 100; do
                         --training.batch_size=$batch_size --training.model=$model \
                         --training.seed=$seed \
                         --training.num_workers=$num_workers \
-                        --training.train_dataset=${trainset}/train.beton \
-                        --training.val_dataset=${testset}_test.beton \
+                        --training.train_dataset=${trainset} \
+                        --training.val_dataset=${testset} \
                         --training.label_noise=$noise \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                         --logging.wandb_project=$wandb_projname
@@ -216,8 +251,8 @@ for noise in 10 20 40 60 80 100; do
                         --training.batch_size=$batch_size --training.model=$model \
                         --training.seed=$seed \
                         --training.num_workers=$num_workers \
-                        --training.train_dataset=${trainset}/train.beton \
-                        --training.val_dataset=${testset}_test.beton \
+                        --training.train_dataset=${trainset} \
+                        --training.val_dataset=${testset} \
                         --training.log_interval=20 \
                         --training.label_noise=$noise \
                         --training.track_jacobian=True \
@@ -230,6 +265,10 @@ for noise in 10 20 40 60 80 100; do
 
 done
 
+fi # end noisy eval
+
+
+if [ "$OOD_EVAL" != "" ]; then
 echo "OOD evaluation"
 
 dataset='cifar10c'
@@ -250,8 +289,12 @@ fi
 
 
 # dataset locations
-trainset="${DATA_DIR}"/$pretrain_dataset
-testset="${DATA_DIR}"/$pretrain_dataset
+testset="${DATA_DIR}"/$pretrain_dataset"_test.beton"
+if [ "$dsize" != "" ]; then
+    trainset="${DATA_DIR}"/$pretrain_dataset"-nsamples_"$dsize"/train.beton"
+else
+    trainset="${DATA_DIR}"/$pretrain_dataset"_train.beton"
+fi
 
 # Let's precache features, should take ~35 seconds (rtx8000)
 python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
@@ -261,8 +304,8 @@ python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
                     --training.batch_size=$batch_size --training.model=$model \
                     --training.seed=$seed \
                     --training.num_workers=$num_workers \
-                    --training.train_dataset=${trainset}_train.beton \
-                    --training.val_dataset=${testset}_test.beton \
+                    --training.train_dataset=${trainset} \
+                    --training.val_dataset=${testset} \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
 new_status=$?
@@ -291,8 +334,12 @@ fi
 for noise in ${ood_noise_types[@]}; do
 
     # dataset locations
-    trainset="${DATA_DIR}"/$pretrain_dataset
-    testset="${DATA_DIR}"/cifar10-c/$noise
+    testset="${DATA_DIR}"/cifar10-c/$noise/test.beton
+    if [ "$dsize" != "" ]; then
+        trainset="${DATA_DIR}"/$pretrain_dataset"-nsamples_"$dsize"/train.beton"
+    else
+        trainset="${DATA_DIR}"/$pretrain_dataset"_train.beton"
+    fi
 
     # Let's precache features, should take ~35 seconds (rtx8000)
     python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
@@ -302,8 +349,8 @@ for noise in ${ood_noise_types[@]}; do
                         --training.batch_size=$batch_size --training.model=$model \
                         --training.seed=$seed \
                         --training.num_workers=$num_workers \
-                        --training.train_dataset=${trainset}_train.beton \
-                        --training.val_dataset=${testset}/test.beton \
+                        --training.train_dataset=${trainset} \
+                        --training.val_dataset=${testset} \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                         --logging.wandb_project=$wandb_projname
 
@@ -318,8 +365,8 @@ for noise in ${ood_noise_types[@]}; do
                         --training.batch_size=$batch_size --training.model=$model \
                         --training.seed=$seed \
                         --training.num_workers=$num_workers \
-                        --training.train_dataset=${trainset}_train.beton \
-                        --training.val_dataset=${testset}/test.beton \
+                        --training.train_dataset=${trainset} \
+                        --training.val_dataset=${testset} \
                         --training.log_interval=10 \
                         --training.track_jacobian=True \
                         --training.jacobian_batch_size=512 \
@@ -331,5 +378,7 @@ for noise in ${ood_noise_types[@]}; do
     new_status=$?
     status=$((status|new_status))
 done
+
+fi # end ood eval
 
 exit $status

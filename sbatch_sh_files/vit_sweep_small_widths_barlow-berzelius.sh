@@ -1,5 +1,5 @@
 #! /bin/bash
-#SBATCH -A berzelius-2024-123
+#SBATCH -A berzelius-2024-116
 #SBATCH --gpus=1
 #SBATCH -t 5:00:00
 #SBATCH -C fat
@@ -40,6 +40,11 @@ else
     proj_str="bt-cifar10-"
     ckpt_str="-cifar10"
 fi
+
+PRETRAIN="True"
+LINEAR_EVAL="True"
+NOISY_EVAL="True"
+OOD_EVAL="True"
 
 lambdas=(0.0001 0.0002 0.0004 0.001 0.002 0.005 0.01 0.02)
 #pdepths=(1 2 3 4)
@@ -102,7 +107,7 @@ trainset="${DATA_DIR}"/$dataset
 testset="${DATA_DIR}"/$dataset
 
 
-if [[ "$pdepth" == "3" ]] || [[ "$pdepth" == "4" ]]; then
+if [ "$PRETRAIN" != "" ]; then
 echo "Pretraining model"
 
 # Let's train a SSL (BarlowTwins) model with the above hyperparams
@@ -133,6 +138,8 @@ if [ ! -d $destdir ]; then
 fi
 cp -v "$SLURM_TMPDIR/exp_ssl_100.pth" "$destdir/exp_ssl_100_seed_"$seed".pt"
 
+fi # end pretrain
+
 src_checkpt="$checkpt_dir/"$model_key"/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
@@ -148,6 +155,8 @@ new_status=$?
 status=$((status|new_status))
 
 model="$model_key"feat_width${width}
+
+if [ "$LINEAR_EVAL" != "" ]; then
 
 echo "Precaching features"
 
@@ -186,6 +195,11 @@ python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml
                     --logging.wandb_project=$wandb_projname
 new_status=$?
 status=$((status|new_status))
+
+fi # end linear eval
+
+
+if [ "$NOISY_EVAL" != "" ]; then
 
 echo "Noisy labels training"
 
@@ -240,8 +254,9 @@ for noise in 10 20 40 60 80 100; do
 
 done
 
-fi # end noisy eval for pdepth 3 and 4
+fi # end noisy eval
 
+if [ "$OOD_EVAL" != "" ]; then
 echo "OOD evaluation"
 
 dataset='cifar10c'
@@ -343,5 +358,7 @@ for noise in ${ood_noise_types[@]}; do
     new_status=$?
     status=$((status|new_status))
 done
+
+fi # end ood eval
 
 exit $status

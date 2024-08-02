@@ -1,13 +1,14 @@
 #! /bin/bash
 #SBATCH -A berzelius-2024-116
 #SBATCH --gpus=1
-#SBATCH -t 6:00:00
-#SBATCH --reservation 1g.10gb
+#SBATCH -t 5:00:00
+#SBATCH -C fat
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /proj/memorization/logs/%A_%a.out
 #SBATCH --error /proj/memorization/logs/%A_%a.err
-#SBATCH --array 0-173%30
+#SBATCH --array 22
+###SBATCH --array 0-173%30
 
 NAME="ssl_simclr_robustness"
 
@@ -62,18 +63,6 @@ ood_noise_types=(
     "snow"
 )
 
-WIDTHS=${#widths[@]}
-conf_id=$((SLURM_ARRAY_TASK_ID/WIDTHS))
-width_id=$((SLURM_ARRAY_TASK_ID%WIDTHS))
-
-width=${widths[width_id]}
-temp=${temps[conf_id]}
-seed=0
-num_workers=16
-pdim=$(($width * 32))
-
-wandb_group='smoothness'
-
 model_key="vit"
 declare -A heads
 heads=(
@@ -83,7 +72,17 @@ heads=(
 )
 numheads="${heads[$model_key]}"
 
+WIDTHS=${#widths[@]}
+conf_id=$((SLURM_ARRAY_TASK_ID/WIDTHS))
+width_id=$((SLURM_ARRAY_TASK_ID%WIDTHS))
+
+width=${widths[width_id]}
+temp=${temps[conf_id]}
+seed=0
+num_workers=16
 pdim=$(($width * $numheads))
+
+wandb_group='smoothness'
 
 model="$model_key"proj_width${width}
 
@@ -119,27 +118,28 @@ python scripts/train_model_widthVary.py --config-file configs/cc_SimCLR.yaml \
                     --training.track_covariance=True \
                     --training.jacobian_batch_size=$jac_batch_size \
                     --training.weight_decay=1e-5 \
+                    --training.algorithm="SimCLR" \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
 
 status=$?
 
 # let's save the model checkpoints to persistent storage
-destdir=$checkpt_dir/$model_key/width${width}/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train
+destdir="$checkpt_dir/"$model_key"_width"${width}"/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train"
 if [ ! -d $destdir ]; then
     mkdir -p $destdir
 fi
-cp -v "$SLURM_TMPDIR/exp_ssl_100.pth" "$destdir/exp_ssl_100_seed_"$seed".pt"
+cp -v "$SLURM_TMPDIR/exp_SimCLR_100.pth" "$destdir/exp_SimCLR_100_seed_"$seed".pt"
 
-src_checkpt="$checkpt_dir/$model_key/width"$width"/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/"$model_key"_width"$width"/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train/exp_SimCLR_100_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then
-    echo "Error: no file not found $src_checkpt"
+    echo "Error: file not found $src_checkpt"
     exit 1
 else
     echo "Copying SSL features to local storage"
-    cp -v "$src_checkpt" "$SLURM_TMPDIR/exp_ssl_100.pth"
+    cp -v "$src_checkpt" "$SLURM_TMPDIR/exp_SimCLR_100.pth"
 fi
 
 new_status=$?
@@ -160,6 +160,7 @@ python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
                     --training.num_workers=$num_workers \
                     --training.train_dataset=${trainset}_train.beton \
                     --training.val_dataset=${testset}_test.beton \
+                    --eval.train_algorithm="SimCLR" \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
 new_status=$?
@@ -180,16 +181,18 @@ python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml
                     --training.log_interval=10 \
                     --training.track_jacobian=True \
                     --training.jacobian_batch_size=512 \
+                    --eval.train_algorithm="SimCLR" \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
 new_status=$?
 status=$((status|new_status))
 
+echo "Done with pretraining. Please run the noisy labels and ood eval separately."
+exit $status
 
 echo "Noisy labels training"
 
 for noise in 10 20 40 60 80 100; do
-
     # running eval with label noise
     wandb_projname="$proj_str"'ssl-robustness-noise'$noise
     checkpt_dir="${SAVE_DIR}"/"$NAME""_noise"$noise"$ckpt_str"
@@ -214,6 +217,7 @@ for noise in 10 20 40 60 80 100; do
                         --training.train_dataset=${trainset}/train.beton \
                         --training.val_dataset=${testset}_test.beton \
                         --training.label_noise=$noise \
+                        --eval.train_algorithm="SimCLR" \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                         --logging.wandb_project=$wandb_projname
     new_status=$?
@@ -233,6 +237,7 @@ for noise in 10 20 40 60 80 100; do
                         --training.label_noise=$noise \
                         --training.track_jacobian=True \
                         --training.jacobian_batch_size=512 \
+                        --eval.train_algorithm="SimCLR" \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                         --logging.wandb_project=$wandb_projname
 
@@ -248,11 +253,11 @@ pretrain_dataset='cifar10'
 
 checkpt_dir="${SAVE_DIR}"/"$NAME""$ckpt_str"
 
-src_checkpt="$checkpt_dir/$model_key/width"$width"/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/"$model_key"_width"$width"/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train/exp_SimCLR_100_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then
-    echo "Error: no file not found $src_checkpt"
+    echo "Error: file not found $src_checkpt"
     exit 1
 else
     echo "Copying SSL features to local storage"
@@ -274,12 +279,13 @@ python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
                     --training.num_workers=$num_workers \
                     --training.train_dataset=${trainset}_train.beton \
                     --training.val_dataset=${testset}_test.beton \
+                    --eval.train_algorithm="SimCLR" \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
 new_status=$?
 status=$((status|new_status))
 
-src_checkpt="$checkpt_dir/$model_key/width"$width"/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-06/1_augs_eval/exp_linear_200_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/"$model_key"_width"$width"/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-06/1_augs_eval/exp_linear_200_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then
@@ -315,6 +321,7 @@ for noise in ${ood_noise_types[@]}; do
                         --training.num_workers=$num_workers \
                         --training.train_dataset=${trainset}_train.beton \
                         --training.val_dataset=${testset}/test.beton \
+                        --eval.train_algorithm="SimCLR" \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                         --logging.wandb_project=$wandb_projname
 
@@ -334,6 +341,7 @@ for noise in ${ood_noise_types[@]}; do
                         --training.log_interval=10 \
                         --training.track_jacobian=True \
                         --training.jacobian_batch_size=512 \
+                        --eval.train_algorithm="SimCLR" \
                         --eval.ood_eval=True \
                         --eval.ood_noise_type=$noise \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \

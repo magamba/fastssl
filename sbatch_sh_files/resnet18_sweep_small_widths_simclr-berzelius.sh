@@ -1,7 +1,7 @@
 #! /bin/bash
 #SBATCH -A berzelius-2024-116
 #SBATCH --gpus=1
-#SBATCH -t 4:00:00
+#SBATCH -t 3:00:00
 #SBATCH --reservation safe
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
@@ -41,6 +41,11 @@ else
     ckpt_str="-cifar10"
 fi
 
+PRETRAIN="True"
+LINEAR_EVAL="True"
+NOISY_EVAL="True"
+OOD_EVAL="True"
+
 temps=(0.005 0.02 0.05 0.1 0.2 0.5)
 #pdepths=(1 2 3 4)
 widths=({8..64..2})
@@ -69,7 +74,8 @@ width_id=$((SLURM_ARRAY_TASK_ID%WIDTHS))
 width=${widths[width_id]}
 temp=${temps[conf_id]}
 seed=0
-num_workers=16
+num_workers=4
+#num_workers=16
 pdim=$(($width * 32))
 
 wandb_group='smoothness'
@@ -90,6 +96,7 @@ fi
 trainset="${DATA_DIR}"/$dataset
 testset="${DATA_DIR}"/$dataset
 
+if [ "$PRETRAIN" != "" ]; then
 echo "Pretraining model"
 
 # Let's train a SSL (SimCLR) model with the above hyperparams
@@ -121,6 +128,8 @@ if [ ! -d $destdir ]; then
 fi
 cp -v "$SLURM_TMPDIR/exp_SimCLR_100.pth" "$destdir/exp_SimCLR_100_seed_"$seed".pt"
 
+fi # end pretrain
+
 src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/2_augs_train/exp_SimCLR_100_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
@@ -137,6 +146,7 @@ status=$((status|new_status))
 
 model=resnet18feat_width${width}
 
+if [ "$LINEAR_EVAL" != "" ]; then
 echo "Precaching features"
 
 # running eval for 0 label noise
@@ -177,7 +187,9 @@ python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml
 new_status=$?
 status=$((status|new_status))
 
+fi # end linear eval
 
+if [ "$NOISY_EVAL" != "" ]; then
 echo "Noisy labels training"
 
 for noise in 10 20 40 60 80 100; do
@@ -234,6 +246,9 @@ for noise in 10 20 40 60 80 100; do
 
 done
 
+fi # end noisy eval
+
+if [ "$OOD_EVAL" != "" ]; then
 echo "OOD evaluation"
 
 dataset='cifar10c'
@@ -293,8 +308,7 @@ then
     mkdir -p "$checkpt_dir"
 fi
 
-#for noise in ${ood_noise_types[@]}; do
-for noise in frost; do
+for noise in ${ood_noise_types[@]}; do
 
     # dataset locations
     trainset="${DATA_DIR}"/$pretrain_dataset
@@ -339,5 +353,7 @@ for noise in frost; do
     new_status=$?
     status=$((status|new_status))
 done
+
+fi # end ood eval
 
 exit $status
