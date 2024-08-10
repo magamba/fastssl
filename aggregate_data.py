@@ -1178,8 +1178,6 @@ figure8_conf = {
     "metrics": ["train_loss", "alpha", "feature_input_jacobian", "rankme", "intra_manifold_eigen", "inter_manifold_eigen"],
 }
 
-print(figure8_conf["nsamples_strings"])
-
 figure8_conf.update({
     "filenames": {
         "barlow_twins": {
@@ -1212,8 +1210,6 @@ figure8_conf.update({
         },
     },
 })
-
-print(figure8_conf["filenames"])
 
 figure8_conf.update({
     "performance_filenames": {
@@ -1326,7 +1322,7 @@ def aggregate_fig8(destdir=plots_path):
                                         ).tolist()
                                         for m_id, metric in enumerate(figure8_conf["metrics"]):
                                             epoch = figure8_conf["epochs"][algorithm]
-                                            logger.info(f"Parsing {base_model}_{width} pdepth {pdepth} hparam {hparam} epoch {epoch} {metric} seed {s_id}")
+                                            logger.info(f"Parsing {base_model}_{width} nsamples {nsamples} pdepth {pdepth} hparam {hparam} epoch {epoch} {metric} seed {s_id}")
                                             plot_data[algorithm][dataset][base_model][n_id, d_id, w_id, h_id, m_id, s_id] = parse_stats(fname, stats, metric, epoch)
                                             
                                     except FileNotFoundError:
@@ -1365,7 +1361,7 @@ def aggregate_fig8(destdir=plots_path):
                                             ).tolist()
                                             for m_id, metric in enumerate(figure8_conf["performance_metrics"]):
                                                 if noise == 0 and metric in ["train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored"]: continue
-                                                logger.info(f"Parsing {base_model}_{width} epoch {epoch} {metric} seed {s_id}")
+                                                logger.info(f"Parsing {base_model}_{width} nsamples {nsamples} epoch {epoch} {metric} seed {s_id}")
                                                 performance_data[algorithm][dataset][base_model][n_id, ns_id, p_id, w_id, h_id, m_id, s_id] = parse_stats(
                                                     fname, stats, metric, epoch
                                                 )
@@ -1407,7 +1403,7 @@ def aggregate_fig8(destdir=plots_path):
                                             ).tolist()
                                             for m_id, metric in enumerate(figure8_conf["ood_metrics"]):
                                                 if noise == 0 and metric in ["train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored"]: continue
-                                                logger.info(f"Parsing noise {noise} {base_model}_{width} epoch {epoch} {metric} seed {s_id}")
+                                                logger.info(f"Parsing noise {noise} {base_model}_{width} nsamples {nsamples} epoch {epoch} {metric} seed {s_id}")
                                                 if n_id == 0:
                                                     ood_data[algorithm][dataset][base_model][n_id, ns_id, p_id, w_id, h_id, m_id, s_id, 0] = parse_stats(
                                                         fname, stats, metric, epoch
