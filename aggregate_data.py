@@ -1154,7 +1154,7 @@ figure8_conf = {
     "noise_configs": [0, 10, 20, 40, 60, 80, 100],
     "nsamples":  [0.2, 0.4, 0.6, 0.8, 1.0],
     "nsamples_strings": {
-        nsamples: f"-nsamples_{nsamples}" if nsamples != 1.0 else "" for nsamples in [0.2, 0.4, 0.6, 0.8, 1.0]
+        nsamples: [f"-nsamples_{nsamples}" if nsamples != 1.0 else ""] for nsamples in [0.2, 0.4, 0.6, 0.8, 1.0]
     },
     "datasets": ["cifar10",],
     "performance_metrics": ["train_acc_1", "train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored", "test_acc_1"],
