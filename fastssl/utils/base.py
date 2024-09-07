@@ -93,8 +93,7 @@ def split_batch_gen(dataloader, num_augmentations=2):
     """
     batch_size = dataloader.batch_size
     assert (2 * batch_size) % num_augmentations == 0, f"Error: NUM_AUGMENTATIONS must divide 2 * BATCH_SIZE when LOCAL_FORWARD is set."
-    local_size = (2 * batch_size) / num_augmentations
-
+    local_size = int((2 * batch_size) / num_augmentations)
     # generator discards labels and augmentations
     for batch in dataloader:
         split_batch = zip(*[torch.split(b, local_size) for b in batch])

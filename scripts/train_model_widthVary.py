@@ -575,7 +575,7 @@ def train_step(
         num_augmentations = args.num_augmentations
         local_steps = num_augmentations / 2
         num_batches = len(dataloader) * local_steps
-        progress_bar = tqdm(
+        train_bar = tqdm(
             split_batch_gen(
                 dataloader, num_augmentations
             ),
