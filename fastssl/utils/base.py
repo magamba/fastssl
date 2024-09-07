@@ -85,14 +85,15 @@ def log_wandb(data_dict: dict, step: int = None, skip_keys: list = None):
     wandb.log({}, commit=True)  # finish incremental logging
     
 
-def split_batch_gen(dataloader, batch_size, num_augmentations=2):
+def split_batch_gen(dataloader, num_augmentations=2):
     """ Creates a generator that splits batches from dataloader into smaller batches
         of @batch_size and yields them.
         
         Note: Batches are assumed to be in the format (img, label, img1, img2, ...)
     """
-    dl_batch_size = dataloader.batch_size
-    assert (dl_batch_size * num_augmentations) % batch_size == 0, f"Error: LOCAL_BATCH_SIZE must divide BATCH_SIZE * NUM_AUGMENTATIONS."
+    batch_size = dataloader.batch_size
+    assert (2 * batch_size) % num_augmentations == 0, f"Error: NUM_AUGMENTATIONS must divide 2 * BATCH_SIZE when LOCAL_FORWARD is set."
+    local_size = (2 * batch_size) / num_augmentations
 
     # generator discards labels and augmentations
     for batch in dataloader:

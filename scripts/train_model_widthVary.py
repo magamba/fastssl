@@ -102,7 +102,7 @@ Section("training", "Fast CIFAR-10 training").params(
     jacobian_bigmem=Param(bool, "Use fast memory-expensive Jacobian computation algorithm, which explicitly instantiates the Jacobian tensor", default=False),
     jacobian_batch_size=Param(int, "Batch size to use for Jacobian computation.", default=128),
     jacobian_nsamples=Param(int, "Number of training samples to use for Jacobian computation. Set to 0 to use all samples (default = 0)", default=0),
-    local_batch_size=Param(int, "Batch size to for local forward passes. Use this for single-GPU training with large batch size", default=0),
+    local_forward=Param(bool, "Split BATCH_SIZE into smaller chunks and perform local forward passes on each chunk. Effective batch size is 2 * BATCH_SIZE / NUM_AUGMENTATIONS", default=False),
     precache=Param(bool, "Precache outputs of network", default=False),
     adaptive_ssl=Param(bool, "Use alpha to regularize SSL loss", default=False),
     num_augmentations=Param(int, "Number of augmentations to use per image", default=2),
@@ -571,13 +571,13 @@ def train_step(
 
     total_loss, total_num, num_batches = 0.0, 0, 0
     
-    if args.algorithm != "linear" and args.local_batch_size > 0:
+    if args.algorithm != "linear" and args.local_forward:
         num_augmentations = args.num_augmentations
-        local_steps = (args.batch_size * num_augmentations) // args.local_batch_size
-        num_batches = len(dataloader) * dataloader.batch_size * num_augmentations // args.local_batch_size
+        local_steps = num_augmentations / 2
+        num_batches = len(dataloader) * local_steps
         progress_bar = tqdm(
             split_batch_gen(
-                dataloader, args.local_batch_size, num_augmentations
+                dataloader, num_augmentations
             ),
             desc="Train",
             total=num_batches,
@@ -1261,9 +1261,9 @@ def run_experiment(args):
         label_noise=training.label_noise,
         extra_augmentations=training.track_covariance,
     )
-    if training.local_batch_size > 0:
-        assert training.algorithm != "linear", "Error: local batch size supported only for SSL pretraining"
-        assert (training.batch_size * training.num_augmentations) % training.local_batch_size == 0, "Error: local_batch_size should divide batch_size"
+    if training.local_forward:
+        assert training.algorithm != "linear", "Error: local forward passes only supported for SSL pretraining"
+        assert (2 * training.batch_size) % training.num_augmentations == 0, "Error: when using local forward computation, NUM_AUGMENTATIONS / 2 should divide BATCH_SIZE"
     print("CONSTRUCTED DATA LOADERS")
     # breakpoint()
 
