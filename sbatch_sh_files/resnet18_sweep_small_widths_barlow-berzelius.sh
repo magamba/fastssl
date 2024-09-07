@@ -2,12 +2,12 @@
 #SBATCH -A berzelius-2024-123
 #SBATCH --gpus=1
 #SBATCH -t 3:00:00
-#SBATCH -C thin
+#SBATCH --reservation safe
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /proj/memorization/logs/%A_%a.out
 #SBATCH --error /proj/memorization/logs/%A_%a.err
-#SBATCH --array 75-89
+#SBATCH --array 75-89%2
 #####SBATCH --array 0-119%30
 
 NAME="ssl_barlow_twins_robustness"
@@ -16,7 +16,7 @@ NAME="ssl_barlow_twins_robustness"
 source scripts/setup_env
 
 if [ -z "$1" ]; then
-    echo "Usage: $0 PROJECTOR_DEPTH [DATASET_SIZE_RATIO]"
+    echo "Usage: $0 PROJECTOR_DEPTH [DATASET_SIZE_RATIO] [SEED] [NUM_PRETRAIN_AUGS]"
     exit 1
 fi
 
@@ -42,21 +42,34 @@ else
     ckpt_str="-cifar10"
 fi
 
-PRETRAIN="True" # empty string to disable
-LINEAR_EVAL="" # empty string to disable
-NOISY_EVAL="" # empty string to disable
-OOD_EVAL="" # empty string to disable
+PRETRAIN="" # empty string to disable
+LINEAR_EVAL="True" # empty string to disable
+NOISY_EVAL="True" # empty string to disable
+OOD_EVAL="True" # empty string to disable
 
 lambdas=(0.0001 0.0002 0.0004 0.001 0.002 0.005 0.01 0.02)
 #pdepths=(1 2 3 4)
 widths=({8..64..4})
 pdepth=$1
 dsize=$2
+seed=$3
+naugs=$4
 
-if [ "$dsize" == "" ]; then
+if [ "$naugs" == "" ]; then
+    naugs=2
+fi
+
+if [ "$dsize" == "" ] || [ "$dsize" == "0" ]; then
     dsize=0
 else
     ckpt_str="$ckpt_str""-nsamples_""$dsize"
+    dsize_int=$(python -c "print(round(float($dsize * 50000)))")
+    if [ $dsize_int -lt $batch_size ]; then
+        batch_size=$dsize_int
+    fi
+    if [ $dsize_int -lt $jac_batch_size ]; then
+        jac_batch_size=$dsize_int
+    fi
 fi
 
 ood_noise_types=(
@@ -81,9 +94,12 @@ width_id=$((SLURM_ARRAY_TASK_ID%WIDTHS))
 
 width=${widths[width_id]}
 lambd=${lambdas[conf_id]}
-seed=0
 num_workers=16
 pdim=$(($width * 32))
+
+if [ "$seed" == "" ]; then
+    seed=0
+fi
 
 #if [ $width -lt 40 ]; then
 #    echo "This run completed successfully."
@@ -132,13 +148,14 @@ python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.ya
                     --training.track_covariance=True \
                     --training.jacobian_batch_size=$jac_batch_size \
                     --training.weight_decay=1e-5 \
+                    --training.num_augmentations=$naugs \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
 
 status=$?
 
 # let's save the model checkpoints to persistent storage
-destdir=$checkpt_dir/resnet18/width${width}/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train
+destdir=$checkpt_dir/resnet18/width${width}/${naugs}_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/${naugs}_augs_train
 if [ ! -d $destdir ]; then
     mkdir -p $destdir
 fi
@@ -146,7 +163,7 @@ cp -v "$SLURM_TMPDIR/exp_ssl_100.pth" "$destdir/exp_ssl_100_seed_"$seed".pt"
 
 fi # end pretrain
 
-src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/resnet18/width"$width"/"$naugs"_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/"$naugs"_augs_train/exp_ssl_100_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then
@@ -177,6 +194,7 @@ python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
                     --training.num_workers=$num_workers \
                     --training.train_dataset=${trainset} \
                     --training.val_dataset=${testset} \
+                    --eval.num_augmentations_pretrain=$naugs \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
 new_status=$?
@@ -196,7 +214,8 @@ python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml
                     --training.val_dataset=${testset} \
                     --training.log_interval=10 \
                     --training.track_jacobian=True \
-                    --training.jacobian_batch_size=512 \
+                    --training.jacobian_batch_size=$jac_batch_size \
+                    --eval.num_augmentations_pretrain=$naugs \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
 new_status=$?
@@ -221,7 +240,7 @@ for noise in 10 20 40 60 80 100; do
 
     # dataset locations
     testset="${DATA_DIR}"/$dataset"_test.beton"
-    if [ "$dsize" != "" ]; then
+    if [ "$dsize" != "" ] && [ "$dsize" != "0" ]; then
         trainset="${DATA_DIR}"/$dataset"-nsamples_"$dsize"-Noise_"$noise"/train.beton"
     else
         trainset="${DATA_DIR}"/$dataset"-Noise_"$noise"/train.beton"
@@ -238,6 +257,7 @@ for noise in 10 20 40 60 80 100; do
                         --training.train_dataset=${trainset} \
                         --training.val_dataset=${testset} \
                         --training.label_noise=$noise \
+                        --eval.num_augmentations_pretrain=$naugs \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                         --logging.wandb_project=$wandb_projname
     new_status=$?
@@ -256,7 +276,8 @@ for noise in 10 20 40 60 80 100; do
                         --training.log_interval=20 \
                         --training.label_noise=$noise \
                         --training.track_jacobian=True \
-                        --training.jacobian_batch_size=512 \
+                        --training.jacobian_batch_size=$jac_batch_size \
+                        --eval.num_augmentations_pretrain=$naugs \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                         --logging.wandb_project=$wandb_projname
 
@@ -276,7 +297,7 @@ pretrain_dataset='cifar10'
 
 checkpt_dir="${SAVE_DIR}"/"$NAME""$ckpt_str"
 
-src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/2_augs_train/exp_ssl_100_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/resnet18/width"$width"/"$naugs"_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/"$naugs"_augs_train/exp_ssl_100_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then
@@ -290,7 +311,7 @@ fi
 
 # dataset locations
 testset="${DATA_DIR}"/$pretrain_dataset"_test.beton"
-if [ "$dsize" != "" ]; then
+if [ "$dsize" != "" ] && [ "$dsize" != "0" ]; then
     trainset="${DATA_DIR}"/$pretrain_dataset"-nsamples_"$dsize"/train.beton"
 else
     trainset="${DATA_DIR}"/$pretrain_dataset"_train.beton"
@@ -306,12 +327,13 @@ python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
                     --training.num_workers=$num_workers \
                     --training.train_dataset=${trainset} \
                     --training.val_dataset=${testset} \
+                    --eval.num_augmentations_pretrain=$naugs \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
 new_status=$?
 status=$((status|new_status))
 
-src_checkpt="$checkpt_dir/resnet18/width"$width"/2_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-06/1_augs_eval/exp_linear_200_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/resnet18/width"$width"/"$naugs"_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-06/1_augs_eval/exp_linear_200_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then
@@ -335,7 +357,7 @@ for noise in ${ood_noise_types[@]}; do
 
     # dataset locations
     testset="${DATA_DIR}"/cifar10-c/$noise/test.beton
-    if [ "$dsize" != "" ]; then
+    if [ "$dsize" != "" ] && [ "$dsize" != "0" ]; then
         trainset="${DATA_DIR}"/$pretrain_dataset"-nsamples_"$dsize"/train.beton"
     else
         trainset="${DATA_DIR}"/$pretrain_dataset"_train.beton"
@@ -351,6 +373,7 @@ for noise in ${ood_noise_types[@]}; do
                         --training.num_workers=$num_workers \
                         --training.train_dataset=${trainset} \
                         --training.val_dataset=${testset} \
+                        --eval.num_augmentations_pretrain=$naugs \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                         --logging.wandb_project=$wandb_projname
 
@@ -369,9 +392,10 @@ for noise in ${ood_noise_types[@]}; do
                         --training.val_dataset=${testset} \
                         --training.log_interval=10 \
                         --training.track_jacobian=True \
-                        --training.jacobian_batch_size=512 \
+                        --training.jacobian_batch_size=$jac_batch_size \
                         --eval.ood_eval=True \
                         --eval.ood_noise_type=$noise \
+                        --eval.num_augmentations_pretrain=$naugs \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                         --logging.wandb_project=$wandb_projname
 

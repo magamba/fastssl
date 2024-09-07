@@ -6,6 +6,8 @@ import os
 import sys
 import logging
 
+from fastssl.utils.powerlaw import rankme
+
 plots_path = "./plots"
 name = 'ssl'
 
@@ -40,7 +42,7 @@ def parse_stats(fname, stats, metric, epoch, ood=False):
         keys = [ i[0] for i in metric_vals ]
         vals = [ i[1] for i in metric_vals ]
         if metric in ["inter_manifold_eigen", "intra_manifold_eigen"]:
-            return np.sum(vals[-1])
+            return rankme(vals[-1])
         try:
             key = keys.index(epoch)
             val = vals[key]
@@ -1145,16 +1147,16 @@ figure8_conf = {
         "barlow_twins": [0.005, ], # 0.02 ],
         "simclr": [0.1,],
     },
-    "seeds" : [0,],
+    "seeds" : [0, 1, 2, 3, 4],
     "epochs": {
         "barlow_twins": 100,
         "simclr": 100,
         "linear": 200,
     },
     "noise_configs": [0, 10, 20, 40, 60, 80, 100],
-    "nsamples":  [0.2, 0.4, 0.6, 0.8, 1.0],
+    "nsamples":  [0.002, 0.004, 0.00768, 0.01, 0.02, 0.04096, 0.2, 0.4, 0.6, 0.8, 1.0],
     "nsamples_strings": {
-        nsamples: [f"-nsamples_{nsamples}" if nsamples != 1.0 else ""] for nsamples in [0.2, 0.4, 0.6, 0.8, 1.0]
+        nsamples: [f"-nsamples_{nsamples}" if nsamples != 1.0 else ""] for nsamples in [0.002, 0.004, 0.00768, 0.01, 0.02, 0.04096, 0.2, 0.4, 0.6, 0.8, 1.0]
     },
     "datasets": ["cifar10",],
     "performance_metrics": ["train_acc_1", "train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored", "test_acc_1"],
