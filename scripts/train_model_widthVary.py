@@ -614,9 +614,8 @@ def train_step(
             inp = (inp[0][0], inp[1]) + inp_augs
         
         if step % local_steps == 0:
-            ## backward
+            ## reset backward
             optimizer.zero_grad()
-            loss_local = 0
 
         ## forward
         if scaler:
@@ -628,23 +627,21 @@ def train_step(
                 else:
                     raise Exception("Algorithm not implemented")
                     
-            loss_local += loss
+            loss /= local_steps
+            scaler.scale(loss).backward()
             if step % local_steps == last_local:
-                loss_local /= local_steps
-                scaler.scale(loss_local).backward()
                 scaler.step(optimizer)
                 scaler.update()
         else:
             loss = loss_fn(model, inp)
-            loss_local += loss
+            loss /= local_steps
+            loss.backward()
             if step % local_steps == last_local:
-                loss_local /= local_steps
-                loss_local.backward()
                 optimizer.step()
                 
         ## update loss
+        total_loss += loss.item()
         if step % local_steps == last_local:
-            total_loss += loss_local.item()
             num_batches += 1
 
             if args.algorithm == "byol":
