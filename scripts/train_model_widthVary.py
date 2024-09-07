@@ -594,7 +594,6 @@ def train_step(
         model.backbone.eval()
 
     # for inp in dataloader:
-    last_local = local_steps -1
     for step, inp in enumerate(train_bar):
         # if num_batches==0:
         #     save_images(img1=inp[0][0].detach().cpu().numpy().transpose([1,2,0]),img2=inp[1][0].detach().cpu().numpy().transpose([1,2,0]),name='epoch_{}_img_'.format(epoch))
@@ -613,10 +612,6 @@ def train_step(
             inp_augs = tuple(inp[0][1:]) if len(inp[0]) > 1 else ()
             inp = (inp[0][0], inp[1]) + inp_augs
         
-        if step % local_steps == 0:
-            ## reset backward
-            optimizer.zero_grad()
-
         ## forward
         if scaler:
             with autocast():
@@ -629,19 +624,21 @@ def train_step(
                     
             loss /= local_steps
             scaler.scale(loss).backward()
-            if step % local_steps == last_local:
+            if (step + 1) % local_steps == 0:
                 scaler.step(optimizer)
                 scaler.update()
+                optimizer.zero_grad()
         else:
             loss = loss_fn(model, inp)
             loss /= local_steps
             loss.backward()
-            if step % local_steps == last_local:
+            if (step + 1) % local_steps == 0:
                 optimizer.step()
+                optimizer.zero_grad()
                 
         ## update loss
         total_loss += loss.item()
-        if step % local_steps == last_local:
+        if (step + 1) % local_steps == 0:
             num_batches += 1
 
             if args.algorithm == "byol":
