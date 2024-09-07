@@ -83,3 +83,20 @@ def log_wandb(data_dict: dict, step: int = None, skip_keys: list = None):
         except:
             print(f"WARNING: Not logging {k} to wandb!")
     wandb.log({}, commit=True)  # finish incremental logging
+    
+
+def split_batch_gen(dataloader, batch_size, num_augmentations=2):
+    """ Creates a generator that splits batches from dataloader into smaller batches
+        of @batch_size and yields them.
+        
+        Note: Batches are assumed to be in the format (img, label, img1, img2, ...)
+    """
+    dl_batch_size = dataloader.batch_size
+    assert (dl_batch_size * num_augmentations) % batch_size == 0, f"Error: LOCAL_BATCH_SIZE must divide BATCH_SIZE * NUM_AUGMENTATIONS."
+
+    # generator discards labels and augmentations
+    for batch in dataloader:
+        split_batch = zip(*[torch.split(b, local_size) for b in batch])
+        for local_batch in split_batch:
+            yield local_batch
+    

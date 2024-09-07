@@ -57,7 +57,8 @@ from fastssl.utils.base import (
     merge_with_args,
     start_wandb_server,
     stop_wandb_server,
-    log_wandb
+    log_wandb,
+    split_batch_gen
 )
 from fastssl.utils.label_correction import eval_step_clean_restored
 import fastssl.utils.powerlaw as powerlaw
@@ -101,6 +102,7 @@ Section("training", "Fast CIFAR-10 training").params(
     jacobian_bigmem=Param(bool, "Use fast memory-expensive Jacobian computation algorithm, which explicitly instantiates the Jacobian tensor", default=False),
     jacobian_batch_size=Param(int, "Batch size to use for Jacobian computation.", default=128),
     jacobian_nsamples=Param(int, "Number of training samples to use for Jacobian computation. Set to 0 to use all samples (default = 0)", default=0),
+    local_batch_size=Param(int, "Batch size to for local forward passes. Use this for single-GPU training with large batch size", default=0),
     precache=Param(bool, "Precache outputs of network", default=False),
     adaptive_ssl=Param(bool, "Use alpha to regularize SSL loss", default=False),
     num_augmentations=Param(int, "Number of augmentations to use per image", default=2),
@@ -568,9 +570,22 @@ def train_step(
     """
 
     total_loss, total_num, num_batches = 0.0, 0, 0
-
-    ## setup dataloader + tqdm
-    train_bar = tqdm(dataloader, desc="Train")
+    
+    if args.algorithm != "linear" and args.local_batch_size > 0:
+        num_augmentations = args.num_augmentations
+        local_steps = (args.batch_size * num_augmentations) // args.local_batch_size
+        num_batches = len(dataloader) * dataloader.batch_size * num_augmentations // args.local_batch_size
+        progress_bar = tqdm(
+            split_batch_gen(
+                dataloader, args.local_batch_size, num_augmentations
+            ),
+            desc="Train",
+            total=num_batches,
+        )
+    else:
+        local_steps = 1 # number of forward passes before running backward pass
+        ## setup dataloader + tqdm
+        train_bar = tqdm(dataloader, desc="Train")
 
     ## set model in train mode
     model.train()
@@ -579,7 +594,8 @@ def train_step(
         model.backbone.eval()
 
     # for inp in dataloader:
-    for inp in train_bar:
+    last_local = local_steps -1
+    for step, inp in enumerate(train_bar):
         # if num_batches==0:
         #     save_images(img1=inp[0][0].detach().cpu().numpy().transpose([1,2,0]),img2=inp[1][0].detach().cpu().numpy().transpose([1,2,0]),name='epoch_{}_img_'.format(epoch))
         # breakpoint()
@@ -596,8 +612,11 @@ def train_step(
         if isinstance(inp[0], (tuple, list)):
             inp_augs = tuple(inp[0][1:]) if len(inp[0]) > 1 else ()
             inp = (inp[0][0], inp[1]) + inp_augs
-        ## backward
-        optimizer.zero_grad()
+        
+        if step % local_steps == 0:
+            ## backward
+            optimizer.zero_grad()
+            loss_local = 0
 
         ## forward
         if scaler:
@@ -608,30 +627,38 @@ def train_step(
                     loss = loss_fn(model, inp)
                 else:
                     raise Exception("Algorithm not implemented")
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+                    
+            loss_local += loss
+            if step % local_steps == last_local:
+                loss_local /= local_steps
+                scaler.scale(loss_local).backward()
+                scaler.step(optimizer)
+                scaler.update()
         else:
             loss = loss_fn(model, inp)
-            loss.backward()
-            optimizer.step()
-
+            loss_local += loss
+            if step % local_steps == last_local:
+                loss_local /= local_steps
+                loss_local.backward()
+                optimizer.step()
+                
         ## update loss
-        total_loss += loss.item()
-        num_batches += 1
+        if step % local_steps == last_local:
+            total_loss += loss_local.item()
+            num_batches += 1
 
-        if args.algorithm == "byol":
-            byol.update_state_dict(target_model, model.state_dict(), args.momentum_tau)
+            if args.algorithm == "byol":
+                byol.update_state_dict(target_model, model.state_dict(), args.momentum_tau)
 
-        # import ray
-        # if ray.tune.is_session_enabled():
-        #     tune.report(epoch=epoch, loss=total_loss/num_batches)
-        lr = optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0]
-        train_bar.set_description(
-            "Train Epoch: [{}/{}] Lr: {:.4f} Loss: {:.4f}".format(
-                epoch, args.epochs, lr, total_loss / num_batches
+            # import ray
+            # if ray.tune.is_session_enabled():
+            #     tune.report(epoch=epoch, loss=total_loss/num_batches)
+            lr = optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0]
+            train_bar.set_description(
+                "Train Epoch: [{}/{}] Lr: {:.4f} Loss: {:.4f}".format(
+                    epoch, args.epochs, lr, total_loss / num_batches
+                )
             )
-        )
     if scheduler is not None:
         scheduler.step()
     return total_loss / num_batches
@@ -1234,6 +1261,9 @@ def run_experiment(args):
         label_noise=training.label_noise,
         extra_augmentations=training.track_covariance,
     )
+    if training.local_batch_size > 0:
+        assert training.algorithm != "linear", "Error: local batch size supported only for SSL pretraining"
+        assert (training.batch_size * training.num_augmentations) % training.local_batch_size == 0, "Error: local_batch_size should divide batch_size"
     print("CONSTRUCTED DATA LOADERS")
     # breakpoint()
 
