@@ -1,6 +1,7 @@
 import numpy as np
 from tqdm import tqdm
 import torch
+import scipy
 
 def covariance_decomposition(net, layer, data_loader, use_cuda=False, max_samples=0):
     """ Decompose feature covariance into intra-manifold and inter-manifold terms
@@ -10,23 +11,36 @@ def covariance_decomposition(net, layer, data_loader, use_cuda=False, max_sample
     activations_arr = generate_activations_prelayer_torch(net, layer, data_loader, use_cuda, max_samples)
     
     # activations_arr NxAxD
+    nobjects = activations_arr.shape[0]
+    naugs = activations_arr.shape[1]
     object_activations = activations_arr.mean(dim=1, keepdim=True)  # mean over augs
     mean_activations = object_activations.mean(dim=0, keepdim=True)
     # compute the inter-object manifold covariance
     sigma_obj = (object_activations - mean_activations).squeeze().T @ (
         object_activations - mean_activations
-    ).squeeze()
+    ).squeeze() / nobjects
 
     # compute the intra-object manifold covariance and take mean across objects
     sigma_augs = torch.bmm(
         (activations_arr - object_activations).permute((0, 2, 1)),
         (activations_arr - object_activations),
-    ).mean(dim=0)
-    
+    ).mean(dim=0) / naugs
+      
     sigma_augs_eigen = torch.linalg.svdvals(sigma_augs).cpu().numpy()
     sigma_obj_eigen = torch.linalg.svdvals(sigma_obj).cpu().numpy()
     
-    return sigma_augs_eigen, sigma_obj_eigen
+    discriminants_obj = scipy.linalg.eigvalsh(a=sigma_obj, b=sigma_augs)
+    discriminants_augs = scipy.linalg.eigvalsh(a=sigma_augs, b=sigma_obj)
+    
+#    # get full svd decomposition of sigma_obj
+#    Uobj, sigma_obj_eigen, Vobj = torch.linalg.svd(sigma_obj, full_matrices=True)    
+#    projection = torch.matmul(sigma_augs.unsqueeze(0), Vobj.unsqueeze(-1)).squeeze()
+#    projection = torch.linalg.vecdot(projection, Vobj)
+#    
+#    # discard null space of sigma_obj and take square to compute projection norm
+#    projecton = torch.sqrt(projection[:len(sigma_obj_eigen)])
+    
+    return sigma_augs_eigen, sigma_obj_eigen, discriminants_augs, discriminants_obj
 
 
 def generate_activations_prelayer_torch(net,layer,data_loader,use_cuda=False,max_samples=0):
