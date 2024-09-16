@@ -116,6 +116,7 @@ Section("eval", "Fast CIFAR-10 evaluation").params(
         int, "Number of augmentations used for pretraining", default=2
     ),
     jacobian_only=Param(bool, "Load model weights and compute input Jacobian of the last feature layer", default=False),
+    ssl_eval=Param(bool, "Evaluate SSL loss on test set and exit", default=False),
     ood_eval=Param(bool, "Evaluate OOD robustness on test set and exit", default=False),
     ood_noise_type=Param(str, "OOD noise type", default=""),
 )
@@ -371,6 +372,10 @@ def build_model(args=None):
             "projector_dim": training.projector_dim,
             "projector_depth": training.projector_depth,
         }
+        
+        if eval.ssl_eval:
+            ckpt_path = gen_ckpt_path(training, eval, epoch=args.eval.epoch)
+            model_args["ckpt_path"] = ckpt_path
 
         if eval.jacobian_only:
             ckpt_path = gen_ckpt_path(training, eval, epoch=args.training.epoch)
@@ -746,6 +751,131 @@ def ood_eval(model, dataloader, epoch=None, epochs=None):
     return acc_1, acc_5
 
 
+def ssl_eval_step(
+    model,
+    dataloader,
+    args,
+    loss_fn,
+    target_model=None,
+    epoch=None,
+):
+    """
+    Evaluate SSL loss on the test set
+
+    Args:
+        model :
+        target_model: Not None if BYOL
+        dataloader :
+        loss_fn:
+    """
+
+    total_loss, total_num, num_batches = 0.0, 0, 0
+
+    ## setup dataloader + tqdm
+    train_bar = tqdm(dataloader, desc="SSL validation loss")
+
+    ## set model in eval mode
+    model.eval()
+
+    # for inp in dataloader:
+    for inp in train_bar:
+        if type(inp[0]) == type(inp[1]) and inp[0].shape == inp[1].shape:
+            # inp is a tuple with the two augmentations.
+            # This is legacy implementation of ffcv for dual augmentations
+            inp = ((inp[0], inp[1]), None)
+
+        ## forward
+        if scaler:
+            with autocast():
+                if args.algorithm == "byol":
+                    loss = loss_fn(model, target_model, inp)
+                elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear", "VICReg"):
+                    loss = loss_fn(model, inp)
+                else:
+                    raise Exception("Algorithm not implemented")
+            
+        else:
+            loss = loss_fn(model, inp)
+
+        ## update loss
+        total_loss += loss.item()
+        num_batches += 1
+        
+        train_bar.set_description(
+            "SSL validation: [{}/{}] Loss: {:.4f}".format(
+                epoch, args.epochs, total_loss / num_batches
+            )
+        )
+
+    return total_loss / num_batches
+
+
+def ssl_eval_ood_step(
+    model,
+    dataloader,
+    args,
+    loss_fn,
+    target_model=None,
+    epoch=None,
+):
+    """
+    Evaluate SSL loss on the test set
+
+    Args:
+        model :
+        target_model: Not None if BYOL
+        dataloader :
+        loss_fn:
+    """
+    corr_strengths = 5 # CIFAR-C uses 5 corruption strengths
+    
+    total_loss, total_samples, num_batches = 0.0, 0, 0
+    loss_values = []
+
+    ## setup dataloader + tqdm
+    train_bar = tqdm(dataloader, desc="SSL ood validation loss")
+
+    ## set model in eval mode
+    model.eval()
+
+    # for inp in dataloader:
+    for inp in train_bar:
+        if type(inp[0]) == type(inp[1]) and inp[0].shape == inp[1].shape:
+            # inp is a tuple with the two augmentations.
+            # This is legacy implementation of ffcv for dual augmentations
+            inp = ((inp[0], inp[1]), None)
+
+        ## forward
+        if scaler:
+            with autocast():
+                if args.algorithm == "byol":
+                    loss = loss_fn(model, target_model, inp)
+                elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear", "VICReg"):
+                    loss = loss_fn(model, inp)
+                else:
+                    raise Exception("Algorithm not implemented")
+            
+        else:
+            loss = loss_fn(model, inp)
+
+        ## update loss
+        total_loss += loss.item()
+        num_batches += 1
+        total_samples += inp[0].shape[0]
+        loss_values.append(loss.item())
+        
+        train_bar.set_description(
+            "SSL validation: [{}/{}] Loss: {:.4f}".format(
+                epoch, args.epochs, total_loss / num_batches
+            )
+        )
+        
+    samples_per_strength = total_samples // corr_strengths
+    assert samples_per_strength % dataloader.batch_size == 0, "Error, batch size should divide the number of samples for each noise intensity"
+    loss = torch.cat(loss_values).reshape(corr_strengths, -1).sum(dim=-1).cpu().numpy()
+    return loss / samples_per_strength
+
+
 def debug_plot(activations_eigen, alpha, ypred, R2, R2_100, figname):
     import matplotlib.pyplot as plt
 
@@ -873,6 +1003,8 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
     if args.track_covariance and args.algorithm != "linear":
         results["intra_manifold_eigen"] = []
         results["inter_manifold_eigen"] = []
+        results["intra_manifold_gen_eigen"] = []
+        results["inter_manifold_gen_eigen"] = []
     
     if label_noise > 0 and args.algorithm == "linear":
         results.update(
@@ -1175,15 +1307,17 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             results["feature_input_jacobian_corr"].append((args.epochs, jacobian_corr))
         
     if args.track_covariance:
-        intra_manifold, inter_manifold = covariance_decomposition(
+            sigma_augs_eigen, sigma_obj_eigen, discriminants_augs, discriminants_obj = covariance_decomposition(
             net=model,
             layer=model.backbone.proj,
             data_loader=loaders["train_extra"],
             use_cuda=True,
             max_samples=args.covariance_nsamples,
         )
-        results["intra_manifold_eigen"].append((args.epochs, intra_manifold))
-        results["inter_manifold_eigen"].append((args.epochs, inter_manifold))
+        results["intra_manifold_eigen"].append((args.epochs, sigma_augs_eigen))
+        results["inter_manifold_eigen"].append((args.epochs, sigma_obj_eigen))
+        results["intra_manifold_gen_eigen"].append((args.epochs, discriminants_augs))
+        results["inter_manifold_gen_eigen"].append((args.epochs, discriminants_obj))
         
     if use_wandb:
         log_wandb(results, step=args.epochs +1, skip_keys=['eigenspectrum', 'base_width'])
@@ -1248,16 +1382,16 @@ def run_experiment(args):
         training.datadir,
         training.train_dataset,
         training.val_dataset,
-        training.batch_size,
+        training.batch_size if not (eval.ssl_eval and eval.ood_noise_type != "") else 500,
         training.num_workers,
-        training.num_augmentations,
+        training.num_augmentations if not eval.ssl_eval else 2,
         upscale=upscale,
         label_noise=training.label_noise,
         extra_augmentations=training.track_covariance,
     )
     if training.local_forward:
         assert training.algorithm != "linear", "Error: local forward passes only supported for SSL pretraining"
-        assert (2 * training.batch_size) % training.num_augmentations == 0, "Error: when using local forward computation, NUM_AUGMENTATIONS / 2 should divide BATCH_SIZE"
+        #assert (2 * training.batch_size) % training.num_augmentations == 0, "Error: when using local forward computation, NUM_AUGMENTATIONS / 2 should divide BATCH_SIZE"
     print("CONSTRUCTED DATA LOADERS")
     # breakpoint()
 
@@ -1346,6 +1480,101 @@ def run_experiment(args):
             "npy",
         )
         np.save(save_path, results)
+    elif eval.ssl_eval:
+        print("Evaluating SSL loss using the train and test sets")
+        results = {
+            "test_loss": [],
+        }
+        
+        loss_fn = build_loss_fn(training)
+        print("CONSTRUCTED LOSS FUNCTION")
+        
+        noise_type = eval.ood_noise_type
+        if noise_type != "":
+            test_loss = ssl_eval_ood_step(
+                model=model,
+                dataloader=loaders["test"],
+                args=training,
+                loss_fn=loss_fn,
+                target_model=target_model if args.algorithm == "byol" else None,
+                epoch=training.epochs,
+            )
+            results["test_loss"].append(test_loss)
+            
+            save_path = gen_ckpt_path(
+                training,
+                eval,
+                training.epochs,
+                "results_{}_{}_ssl_eval".format(training.dataset, noise_type),
+                "npy",
+            )
+            
+        else:
+            results["train_loss"] = []
+            test_loss = ssl_eval_step(
+                model=model,
+                dataloader=loaders["test"],
+                args=training,
+                loss_fn=loss_fn,
+                target_model=target_model if args.algorithm == "byol" else None,
+                epoch=training.epochs,
+            )
+            
+            train_loss = ssl_eval_step(
+                model=model,
+                dataloader=loaders["train"],
+                args=training,
+                loss_fn=loss_fn,
+                target_model=target_model if args.algorithm == "byol" else None,
+                epoch=training.epochs,
+            )
+            results["test_loss"].append(test_loss)
+            results["train_loss"].append(train_loss)
+            
+            save_path = gen_ckpt_path(
+                training,
+                eval,
+                training.epochs,
+                "results_{}_ssl_eval".format(training.dataset),
+                "npy",
+            )
+        
+        if use_wandb:
+            log_wandb(results, step=training.epochs)
+        
+        np.save(save_path, results)
+        
+        if training.track_covariance:
+            print("Computing covariance decomposition")
+            results = {
+                "intra_manifold_eigen": [],
+                "inter_manifold_eigen": [],
+                "sigma_inter_proj": [],
+            }
+            
+            sigma_augs_eigen, sigma_obj_eigen, discriminants_augs, discriminants_obj = covariance_decomposition(
+                net=model,
+                layer=model.backbone.proj,
+                data_loader=loaders["train_extra"],
+                use_cuda=True,
+                max_samples=training.covariance_nsamples,
+            )
+            results["intra_manifold_eigen"].append(sigma_augs_eigen)
+            results["inter_manifold_eigen"].append(sigma_obj_eigen)
+            results["inter_manifold_gen_eigen"].append(discriminants_obj)
+            results["intra_manifold_gen_eigen"].append(discriminants_augs)
+            
+            if use_wandb:
+                log_wandb(results, step=training.epochs)
+                
+            save_path = gen_ckpt_path(
+                training,
+                eval,
+                training.epochs,
+                "results_{}_ssl_covariance".format(training.dataset),
+                "npy",
+            )
+            np.save(save_path, results)
     else:
         # get loss function
         loss_fn = build_loss_fn(training)
