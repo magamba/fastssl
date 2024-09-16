@@ -7,6 +7,7 @@ import wandb
 from fastargs import get_current_config
 
 def set_seeds(seed, use_deterministic=False):
+    torch.set_float32_matmul_precision('high')
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
