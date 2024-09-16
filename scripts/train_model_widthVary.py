@@ -1307,7 +1307,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             results["feature_input_jacobian_corr"].append((args.epochs, jacobian_corr))
         
     if args.track_covariance:
-            sigma_augs_eigen, sigma_obj_eigen, discriminants_augs, discriminants_obj = covariance_decomposition(
+        sigma_augs_eigen, sigma_obj_eigen, discriminants_augs, discriminants_obj = covariance_decomposition(
             net=model,
             layer=model.backbone.proj,
             data_loader=loaders["train_extra"],
