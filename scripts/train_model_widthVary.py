@@ -372,14 +372,6 @@ def build_model(args=None):
             "projector_dim": training.projector_dim,
             "projector_depth": training.projector_depth,
         }
-        
-        if eval.ssl_eval:
-            ckpt_path = gen_ckpt_path(training, eval, epoch=args.eval.epoch)
-            model_args["ckpt_path"] = ckpt_path
-
-        if eval.jacobian_only:
-            ckpt_path = gen_ckpt_path(training, eval, epoch=args.training.epoch)
-            model_args["ckpt_path"] = ckpt_path
 
         if training.algorithm in ("byol"):
             model_args["hidden_dim"] = training.hidden_dim
@@ -458,7 +450,7 @@ def build_model(args=None):
         model_cls = linear.LinearClassifier
 
     model = model_cls(**model_args)
-    if eval.ood_eval:
+    if eval.ood_eval or eval.ssl_eval or eval.jacobian_only:
         ckpt_path = gen_ckpt_path(training, eval, epoch=args.training.epochs)
         print(f"Loading model checkpoint {ckpt_path}")
         model.load_state_dict(
