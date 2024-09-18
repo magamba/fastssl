@@ -1,7 +1,7 @@
 #! /bin/bash
 #SBATCH -A berzelius-2024-116
 #SBATCH --gpus=1
-#SBATCH -t 1:00:00
+#SBATCH -t 3:00:00
 #SBATCH -C thin
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
@@ -42,11 +42,11 @@ else
     ckpt_str="-cifar10"
 fi
 
-PRETRAIN="" # empty string to disable
+PRETRAIN="True" # empty string to disable
 LINEAR_EVAL="" # empty string to disable
 NOISY_EVAL="" # empty string to disable
 OOD_EVAL="" # empty string to disable
-SSL_EVAL="True" # empty string to disable
+SSL_EVAL="" # empty string to disable
 
 lambdas=(0.0001 0.0002 0.0004 0.001 0.002 0.005 0.01 0.02)
 #pdepths=(1 2 3 4)
@@ -101,11 +101,6 @@ pdim=$(($width * 32))
 if [ "$seed" == "" ]; then
     seed=0
 fi
-
-#if [ $width -lt 40 ]; then
-#    echo "This run completed successfully."
-#    exit 0
-#fi
 
 wandb_group='smoothness'
 
@@ -442,7 +437,6 @@ if [ "$SSL_EVAL" != "" ]; then
                         --training.num_workers=$num_workers \
                         --training.log_interval=20 \
                         --training.track_alpha=True \
-                        --training.track_covariance=True \
                         --training.jacobian_batch_size=$jac_batch_size \
                         --training.weight_decay=1e-5 \
                         --training.num_augmentations=$naugs \

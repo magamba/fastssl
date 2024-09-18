@@ -42,11 +42,11 @@ else
     ckpt_str="-cifar10"
 fi
 
-PRETRAIN=""
+PRETRAIN="True"
 LINEAR_EVAL=""
 NOISY_EVAL=""
 OOD_EVAL=""
-SSL_EVAL="True"
+SSL_EVAL=""
 
 lambdas=(0.0001 0.0002 0.0004 0.001 0.002 0.005 0.01 0.02)
 #pdepths=(1 2 3 4)
@@ -103,7 +103,6 @@ width_id=$((SLURM_ARRAY_TASK_ID%WIDTHS))
 width=${widths[width_id]}
 lambd=${lambdas[conf_id]}
 num_workers=16
-pdim=$(($width * 32))
 
 if [ "$seed" == "" ]; then
     seed=0
@@ -141,7 +140,6 @@ if [ "$dsize" != "0" ]; then
 else
     trainset="${DATA_DIR}"/"$dataset"_train.beton
 fi
-
 
 if [ "$PRETRAIN" != "" ]; then
 echo "Pretraining model"
@@ -455,7 +453,6 @@ if [ "$SSL_EVAL" != "" ]; then
                         --training.num_workers=$num_workers \
                         --training.log_interval=20 \
                         --training.track_alpha=True \
-                        --training.track_covariance=True \
                         --training.jacobian_batch_size=$jac_batch_size \
                         --training.weight_decay=1e-5 \
                         --training.num_augmentations=$naugs \
