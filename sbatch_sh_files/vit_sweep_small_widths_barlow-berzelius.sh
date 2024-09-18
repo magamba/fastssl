@@ -1,7 +1,7 @@
 #! /bin/bash
 #SBATCH -A berzelius-2024-116
 #SBATCH --gpus=1
-#SBATCH -t 5:00:00
+#SBATCH -t 1:00:00
 #SBATCH -C fat
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
@@ -42,10 +42,11 @@ else
     ckpt_str="-cifar10"
 fi
 
-PRETRAIN="True"
+PRETRAIN=""
 LINEAR_EVAL=""
 NOISY_EVAL=""
 OOD_EVAL=""
+SSL_EVAL="True"
 
 lambdas=(0.0001 0.0002 0.0004 0.001 0.002 0.005 0.01 0.02)
 #pdepths=(1 2 3 4)
@@ -59,11 +60,18 @@ if [ "$naugs" == "" ]; then
     naugs=2
 fi
 
+pretrain_args=""
+dsize_int=$(python -c "print(round(float($dsize * 50000)))")
+#effective_batch_div=$(((2 * dsize_int) % naugs))
+effective_batch_div=0
+if [ "$PRETRAIN" != "" ] && [ $naugs -gt 2 ] && [ $effective_batch_div -eq 0 ]; then
+    pretrain_args="$pretrain_args --training.local_forward=True"
+fi
+
 if [ "$dsize" == "" ] || [ "$dsize" == "0" ]; then
     dsize=0
 else
     ckpt_str="$ckpt_str""-nsamples_""$dsize"
-    dsize_int=$(python -c "print(round(float($dsize * 50000)))")
     if [ $dsize_int -lt $batch_size ]; then
         batch_size=$dsize_int
     fi
@@ -99,10 +107,6 @@ pdim=$(($width * 32))
 
 if [ "$seed" == "" ]; then
     seed=0
-fi
-
-if [ "$PRETRAIN" != "" ] && [ $naugs -ge 16 ] && [ $width -ge 60 ]; then
-    batch_size=$(($batch_size // 2))
 fi
 
 wandb_group='smoothness'
@@ -160,7 +164,8 @@ python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.ya
                     --training.weight_decay=1e-5 \
                     --training.num_augmentations=$naugs \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
-                    --logging.wandb_project=$wandb_projname
+                    --logging.wandb_project=$wandb_projname \
+                    $pretrain_args
 
 status=$?
 
@@ -412,5 +417,90 @@ for noise in ${ood_noise_types[@]}; do
 done
 
 fi # end ood eval
+
+if [ "$SSL_EVAL" != "" ]; then
+
+    model="$model_key"proj_width${width}
+    dataset='cifar10'
+
+    # copy checkpoint of full model
+    src_checkpt="$checkpt_dir/"$model_key"/width"$width"/"$naugs"_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/"$naugs"_augs_train/exp_ssl_100_seed_"$seed".pt"
+
+    if [ ! -f "$src_checkpt" ];
+    then
+        echo "Error: no file not found $src_checkpt"
+        exit 1
+    else
+        echo "Copying SSL features to local storage"
+        cp -v "$src_checkpt" "$SLURM_TMPDIR/exp_ssl_100.pth"
+    fi
+
+
+    # dataset locations
+    testset="${DATA_DIR}"/$dataset"_test.beton"
+    if [ "$dsize" != "0" ]; then
+        trainset="${DATA_DIR}"/$dataset"-nsamples_$dsize"/train.beton
+    else
+        trainset="${DATA_DIR}"/"$dataset"_train.beton
+    fi
+
+    python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.yaml \
+                        --training.lambd=$lambd --training.projector_dim=$pdim \
+                        --training.projector_depth=$pdepth \
+                        --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
+                        --training.batch_size=$batch_size --training.model=$model \
+                        --training.seed=$seed \
+                        --training.train_dataset=${trainset} \
+                        --training.val_dataset=${testset} \
+                        --training.num_workers=$num_workers \
+                        --training.log_interval=20 \
+                        --training.track_alpha=True \
+                        --training.track_covariance=True \
+                        --training.jacobian_batch_size=$jac_batch_size \
+                        --training.weight_decay=1e-5 \
+                        --training.num_augmentations=$naugs \
+                        --eval.ssl_eval=True \
+                        --logging.use_wandb=True --logging.wandb_group=$wandb_group \
+                        --logging.wandb_project=$wandb_projname
+
+    new_status=$?
+    status=$((status|new_status))
+
+    # loop over noise
+    # run ood eval without covariance
+    for noise in ${ood_noise_types[@]}; do
+
+        # dataset locations
+        pretrain_dataset='cifar10'
+        testset="${DATA_DIR}"/cifar10-c/$noise/test.beton
+        if [ "$dsize" != "" ] && [ "$dsize" != "0" ]; then
+            trainset="${DATA_DIR}"/$pretrain_dataset"-nsamples_"$dsize"/train.beton"
+        else
+            trainset="${DATA_DIR}"/$pretrain_dataset"_train.beton"
+        fi
+
+	python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.yaml \
+                            --training.lambd=$lambd --training.projector_dim=$pdim \
+                            --training.projector_depth=$pdepth \
+                            --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
+                            --training.batch_size=$batch_size --training.model=$model \
+                            --training.seed=$seed \
+                            --training.train_dataset=${trainset} \
+                            --training.val_dataset=${testset} \
+                            --training.num_workers=$num_workers \
+                            --training.log_interval=20 \
+                            --training.track_alpha=True \
+                            --training.jacobian_batch_size=$jac_batch_size \
+                            --training.weight_decay=1e-5 \
+                            --training.num_augmentations=$naugs \
+                            --eval.ssl_eval=True \
+                            --eval.ood_noise_type=$noise \
+                            --logging.use_wandb=True --logging.wandb_group=$wandb_group \
+                            --logging.wandb_project=$wandb_projname
+
+        new_status=$?
+        status=$((status|new_status))
+    done
+fi # end SSL eval
 
 exit $status

@@ -771,23 +771,24 @@ def ssl_eval_step(
 
     # for inp in dataloader:
     for inp in train_bar:
-        if type(inp[0]) == type(inp[1]) and inp[0].shape == inp[1].shape:
-            # inp is a tuple with the two augmentations.
-            # This is legacy implementation of ffcv for dual augmentations
-            inp = ((inp[0], inp[1]), None)
+        with torch.no_grad():
+            if type(inp[0]) == type(inp[1]) and inp[0].shape == inp[1].shape:
+                # inp is a tuple with the two augmentations.
+                # This is legacy implementation of ffcv for dual augmentations
+                inp = ((inp[0], inp[1]), None)
 
-        ## forward
-        if scaler:
-            with autocast():
-                if args.algorithm == "byol":
-                    loss = loss_fn(model, target_model, inp)
-                elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear", "VICReg"):
-                    loss = loss_fn(model, inp)
-                else:
-                    raise Exception("Algorithm not implemented")
+            ## forward
+            if args.use_autocast:
+                with autocast():
+                    if args.algorithm == "byol":
+                        loss = loss_fn(model, target_model, inp)
+                    elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear", "VICReg"):
+                        loss = loss_fn(model, inp)
+                    else:
+                        raise Exception("Algorithm not implemented")
             
-        else:
-            loss = loss_fn(model, inp)
+            else:
+                loss = loss_fn(model, inp)
 
         ## update loss
         total_loss += loss.item()
@@ -832,29 +833,29 @@ def ssl_eval_ood_step(
 
     # for inp in dataloader:
     for inp in train_bar:
-        if type(inp[0]) == type(inp[1]) and inp[0].shape == inp[1].shape:
-            # inp is a tuple with the two augmentations.
-            # This is legacy implementation of ffcv for dual augmentations
-            inp = ((inp[0], inp[1]), None)
+        with torch.no_grad():
+            if type(inp[0]) == type(inp[1]) and inp[0].shape == inp[1].shape:
+                # inp is a tuple with the two augmentations.
+                # This is legacy implementation of ffcv for dual augmentations
+                inp = ((inp[0], inp[1]), None)
 
-        ## forward
-        if scaler:
-            with autocast():
-                if args.algorithm == "byol":
-                    loss = loss_fn(model, target_model, inp)
-                elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear", "VICReg"):
-                    loss = loss_fn(model, inp)
-                else:
-                    raise Exception("Algorithm not implemented")
-            
-        else:
-            loss = loss_fn(model, inp)
+            ## forward
+            if args.use_autocast:
+                with autocast():
+                    if args.algorithm == "byol":
+                        loss = loss_fn(model, target_model, inp)
+                    elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear", "VICReg"):
+                        loss = loss_fn(model, inp)
+                    else:
+                        raise Exception("Algorithm not implemented")
+            else:
+                loss = loss_fn(model, inp)
 
         ## update loss
         total_loss += loss.item()
         num_batches += 1
         total_samples += inp[0].shape[0]
-        loss_values.append(loss.item())
+        loss_values.append(loss)
         
         train_bar.set_description(
             "SSL validation: [{}/{}] Loss: {:.4f}".format(
@@ -864,7 +865,7 @@ def ssl_eval_ood_step(
         
     samples_per_strength = total_samples // corr_strengths
     assert samples_per_strength % dataloader.batch_size == 0, "Error, batch size should divide the number of samples for each noise intensity"
-    loss = torch.cat(loss_values).reshape(corr_strengths, -1).sum(dim=-1).cpu().numpy()
+    loss = torch.stack(loss_values).reshape(corr_strengths, -1).sum(dim=-1).cpu().numpy()
     return loss / samples_per_strength
 
 
@@ -1417,15 +1418,15 @@ def run_experiment(args):
         jacobian, jacobian_clean, jacobian_corr = input_jacobian(
             net=model,
             layer=model.backbone.proj,
-            data_loader=loaders["train"], 
-            batch_size=args.jacobian_batch_size, 
-            use_cuda=True, 
-            max_samples=args.jacobian_nsamples,
-            bigmem=args.jacobian_bigmem,
-            label_noise=label_noise,
+            data_loader=loaders["train"],
+            batch_size=training.jacobian_batch_size,
+            use_cuda=True,
+            max_samples=training.jacobian_nsamples,
+            bigmem=training.jacobian_bigmem,
+            label_noise=training.label_noise,
         )
         results["feature_input_jacobian"] = [jacobian]
-        if args.label_noise > 0:
+        if training.label_noise > 0:
             results["feature_input_jacobian_clean"] = [jacobian_clean]
             results["feature_input_jacobian_corr"] = [jacobian_corr]
         
@@ -1488,7 +1489,7 @@ def run_experiment(args):
                 dataloader=loaders["test"],
                 args=training,
                 loss_fn=loss_fn,
-                target_model=target_model if args.algorithm == "byol" else None,
+                target_model=target_model if training.algorithm == "byol" else None,
                 epoch=training.epochs,
             )
             results["test_loss"].append(test_loss)
@@ -1503,21 +1504,20 @@ def run_experiment(args):
             
         else:
             results["train_loss"] = []
-            test_loss = ssl_eval_step(
-                model=model,
-                dataloader=loaders["test"],
-                args=training,
-                loss_fn=loss_fn,
-                target_model=target_model if args.algorithm == "byol" else None,
-                epoch=training.epochs,
-            )
-            
             train_loss = ssl_eval_step(
                 model=model,
                 dataloader=loaders["train"],
                 args=training,
                 loss_fn=loss_fn,
-                target_model=target_model if args.algorithm == "byol" else None,
+                target_model=target_model if training.algorithm == "byol" else None,
+                epoch=training.epochs,
+            )
+            test_loss = ssl_eval_step(
+                model=model,
+                dataloader=loaders["test"],
+                args=training,
+                loss_fn=loss_fn,
+                target_model=target_model if training.algorithm == "byol" else None,
                 epoch=training.epochs,
             )
             results["test_loss"].append(test_loss)
@@ -1531,7 +1531,7 @@ def run_experiment(args):
                 "npy",
             )
         
-        if use_wandb:
+        if args.logging.use_wandb:
             log_wandb(results, step=training.epochs)
         
         np.save(save_path, results)
@@ -1541,7 +1541,8 @@ def run_experiment(args):
             results = {
                 "intra_manifold_eigen": [],
                 "inter_manifold_eigen": [],
-                "sigma_inter_proj": [],
+                "intra_manifold_gen_eigen": [],
+                "inter_manifold_gen_eigen": [],
             }
             
             sigma_augs_eigen, sigma_obj_eigen, discriminants_augs, discriminants_obj = covariance_decomposition(
@@ -1556,7 +1557,7 @@ def run_experiment(args):
             results["inter_manifold_gen_eigen"].append(discriminants_obj)
             results["intra_manifold_gen_eigen"].append(discriminants_augs)
             
-            if use_wandb:
+            if args.logging.use_wandb:
                 log_wandb(results, step=training.epochs)
                 
             save_path = gen_ckpt_path(

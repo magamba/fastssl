@@ -205,6 +205,7 @@ def gen_image_label_pipeline_ffcv_ssl_test(
     rescale: bool = False,
     device: str = "cuda:0",
     num_augmentations: int = 2,
+    upscale: bool = False,
 ):
     """Test function for generating multiple augmentations from each image.
 
@@ -426,6 +427,7 @@ def cifar_ffcv(
         "rescale": False,
         "device": device,
         "num_augmentations": num_augmentations,
+        "upscale": upscale,
     }
     if not test_ffcv:
         kwargs["extra_augmentations"] = extra_augmentations

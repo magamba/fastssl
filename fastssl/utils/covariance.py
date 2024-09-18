@@ -2,7 +2,7 @@ import numpy as np
 from tqdm import tqdm
 import torch
 import scipy
-
+from numpy.linalg import LinAlgError
 def covariance_decomposition(net, layer, data_loader, use_cuda=False, max_samples=0):
     """ Decompose feature covariance into intra-manifold and inter-manifold terms
     
@@ -29,17 +29,38 @@ def covariance_decomposition(net, layer, data_loader, use_cuda=False, max_sample
     sigma_augs_eigen = torch.linalg.svdvals(sigma_augs).cpu().numpy()
     sigma_obj_eigen = torch.linalg.svdvals(sigma_obj).cpu().numpy()
     
-    discriminants_obj = scipy.linalg.eigvalsh(a=sigma_obj, b=sigma_augs)
-    discriminants_augs = scipy.linalg.eigvalsh(a=sigma_augs, b=sigma_obj)
-    
+    try:
+        try:
+            discriminants_obj = scipy.linalg.eigvalsh(a=sigma_obj, b=sigma_augs)
+        except LinAlgError:
+            print("Sigma_intra inversion failed")
+            sigma_augs_reg = sigma_augs + 1e-7 * np.eye(sigma_augs.shape[0])
+            discriminants_obj = scipy.linalg.eigvalsh(a=sigma_obj, b=sigma_augs_reg)
+            #discriminants_obj = np.zeros_like(sigma_augs_eigen)
+    except LinAlgError:
+        print("Regularized Sigma_intra inversion failed!")
+        discriminants_obj = np.zeros_like(sigma_augs_eigen)
+
+    try:
+        try:
+            discriminants_augs = scipy.linalg.eigvalsh(a=sigma_augs, b=sigma_obj)
+        except LinAlgError:
+            print("Sigma_inter inversion failed")
+            sigma_obj_reg = sigma_obj + 1e-7 * np.eye(sigma_obj.shape[0])
+            discriminants_augs = scipy.linalg.eigvalsh(a=sigma_augs, b=sigma_obj_reg)
+            #discriminants_augs = np.zeros_like(discriminants_obj)
+    except LinAlgError:
+        print("Regularized Sigma_inter inversion failed!")
+        discriminants_augs = np.zeros_like(sigma_obj_eigen)
+
 #    # get full svd decomposition of sigma_obj
-#    Uobj, sigma_obj_eigen, Vobj = torch.linalg.svd(sigma_obj, full_matrices=True)    
+#    Uobj, sigma_obj_eigen, Vobj = torch.linalg.svd(sigma_obj, full_matrices=True)
 #    projection = torch.matmul(sigma_augs.unsqueeze(0), Vobj.unsqueeze(-1)).squeeze()
 #    projection = torch.linalg.vecdot(projection, Vobj)
-#    
+#
 #    # discard null space of sigma_obj and take square to compute projection norm
 #    projecton = torch.sqrt(projection[:len(sigma_obj_eigen)])
-    
+
     return sigma_augs_eigen, sigma_obj_eigen, discriminants_augs, discriminants_obj
 
 
