@@ -34,7 +34,8 @@ def covariance_decomposition(net, layer, data_loader, use_cuda=False, max_sample
             discriminants_obj = scipy.linalg.eigvalsh(a=sigma_obj, b=sigma_augs)
         except LinAlgError:
             print("Sigma_intra inversion failed")
-            sigma_augs_reg = sigma_augs + 1e-7 * np.eye(sigma_augs.shape[0])
+            eps = np.linalg.norm(sigma_augs) * np.finfo(sigma_augs.dtype).eps 
+            sigma_augs_reg = sigma_augs + eps * np.eye(sigma_augs.shape[0])
             discriminants_obj = scipy.linalg.eigvalsh(a=sigma_obj, b=sigma_augs_reg)
             #discriminants_obj = np.zeros_like(sigma_augs_eigen)
     except LinAlgError:
@@ -46,7 +47,8 @@ def covariance_decomposition(net, layer, data_loader, use_cuda=False, max_sample
             discriminants_augs = scipy.linalg.eigvalsh(a=sigma_augs, b=sigma_obj)
         except LinAlgError:
             print("Sigma_inter inversion failed")
-            sigma_obj_reg = sigma_obj + 1e-7 * np.eye(sigma_obj.shape[0])
+            eps = np.linalg.norm(sigma_obj) * np.finfo(sigma_obj.dtype).eps 
+            sigma_obj_reg = sigma_obj + eps * np.eye(sigma_obj.shape[0])
             discriminants_augs = scipy.linalg.eigvalsh(a=sigma_augs, b=sigma_obj_reg)
             #discriminants_augs = np.zeros_like(discriminants_obj)
     except LinAlgError:
