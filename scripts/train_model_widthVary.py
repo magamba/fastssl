@@ -26,9 +26,11 @@ import pickle
 
 import time, copy
 import torch
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adam, SGD, lr_scheduler
+import torch._dynamo
+torch._dynamo.config.suppress_errors = True
 
 import torchvision
 from tqdm import tqdm
@@ -220,7 +222,7 @@ def build_dataloaders(
                  datadir,
                  batch_size,
                  num_workers,
-            )             
+            )
         elif algorithm == "linear":
             default_linear_bsz = 512
 #            return imagenet_classifier_ffcv(
@@ -456,6 +458,7 @@ def build_model(args=None):
         model.load_state_dict(
             torch.load(ckpt_path, map_location="cpu")["model"]
         )
+    model = torch.compile(model)
     model = model.to(memory_format=torch.channels_last).cuda()
     return model
 
@@ -611,7 +614,7 @@ def train_step(
         
         ## forward
         if scaler:
-            with autocast():
+            with autocast(device_type="cuda"):
                 if args.algorithm == "byol":
                     loss = loss_fn(model, target_model, inp)
                 elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear", "VICReg"):
@@ -670,7 +673,7 @@ def eval_step(model, dataloader, epoch=None, epochs=None):
         total_samples += inp[0].shape[0]
         # total_samples += data.shape[0]
         # data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
-        with autocast():
+        with autocast(device_type="cuda"):
             logits = model(inp)
             preds = torch.argsort(logits, dim=1, descending=True)
             total_correct_1 += torch.sum(
@@ -714,7 +717,7 @@ def ood_eval(model, dataloader, epoch=None, epochs=None):
         total_samples += inp[0].shape[0]
         # total_samples += data.shape[0]
         # data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
-        with autocast():
+        with autocast(device_type="cuda"):
             logits = model(inp)
             preds = torch.argsort(logits, dim=1, descending=True)
             total_correct_1.append(
@@ -779,7 +782,7 @@ def ssl_eval_step(
 
             ## forward
             if args.use_autocast:
-                with autocast():
+                with autocast(device_type="cuda"):
                     if args.algorithm == "byol":
                         loss = loss_fn(model, target_model, inp)
                     elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear", "VICReg"):
@@ -841,7 +844,7 @@ def ssl_eval_ood_step(
 
             ## forward
             if args.use_autocast:
-                with autocast():
+                with autocast(device_type="cuda"):
                     if args.algorithm == "byol":
                         loss = loss_fn(model, target_model, inp)
                     elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear", "VICReg"):
@@ -901,7 +904,7 @@ def precache_outputs(model, loaders, args, eval_args):
         for x in inp:
             x = x.cuda(non_blocking=True)
         # data = data.cuda(non_blocking=True)
-        with autocast():
+        with autocast(device_type="cuda"):
             with torch.no_grad():
                 out_augs = [model(x) for x in inp]
                 # mean of features across different augmentations of each image
@@ -931,7 +934,7 @@ def precache_outputs(model, loaders, args, eval_args):
         for x in inp:
             x = x.cuda(non_blocking=True)
         # data = data.cuda(non_blocking=True)
-        with autocast():
+        with autocast(device_type="cuda"):
             with torch.no_grad():
                 out_augs = [model(x) for x in inp]
                 # mean of features across different augmentations of each image
@@ -1019,7 +1022,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 use_cuda=True,
             )
             activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
-            with autocast():
+            with autocast(device_type="cuda"):
                 try:
                     tmin, tmax = 3, min(50, activations.shape[1])
                     alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(

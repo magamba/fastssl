@@ -1,6 +1,6 @@
 from tqdm import tqdm
 import torch
-from torch.cuda.amp import autocast
+from torch.amp import autocast
 
 def eval_step_clean_restored(model, dataloader, epoch=None, epochs=None, split=""):
     model.eval()
@@ -30,7 +30,7 @@ def eval_step_clean_restored(model, dataloader, epoch=None, epochs=None, split="
         
         # total_samples += data.shape[0]
         # data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
-        with autocast():
+        with autocast(device_type="cuda"):
             logits = model(inp)
             
             preds = torch.argsort(logits, dim=1, descending=True)

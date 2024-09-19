@@ -7,7 +7,8 @@ function deactivate_conda_if_in_env() {
 }
 
 # On Berzelius
-CONDA_ENV="fastssl-2.0"
+#CONDA_ENV="fastssl-2.0"
+CONDA_ENV="fastssl-2.4"
 
 # shellcheck source=/dev/null
 eval "$(/proj/memorization/users/x_matga/miniconda3/bin/conda shell.bash hook)"
@@ -28,7 +29,7 @@ DEVICE="cuda"
 # set up wandb
 WANDB_API_KEY="a31e51e69e539eaffb5d3683c402e59375cd47e6"
 WANDB_CACHE_DIR="/scratch/local"
-
+WANDB_MODE="offline"
 
 # Set this to zero, disabling random salts for hashes
 # if an arg is given, then use that instead
@@ -43,7 +44,7 @@ done
 echo "SETUP_ENV - PYTHONHASHSEED=$PYTHONHASHSEED"
 
 
-export SAVE_DIR DATA_DIR WORKERS DEVICE PYTHONHASHSEED OUTPUT WANDB_API_KEY WANDB_CACHE_DIR
+export SAVE_DIR DATA_DIR WORKERS DEVICE PYTHONHASHSEED OUTPUT WANDB_API_KEY WANDB_CACHE_DIR WANDB_MODE
 
 echo "SETUP_ENV - Current ENV is:"
 printenv
