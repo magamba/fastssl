@@ -26,33 +26,39 @@ def covariance_decomposition(net, layer, data_loader, use_cuda=False, max_sample
         (activations_arr - object_activations),
     ).mean(dim=0) / naugs
       
-    sigma_augs_eigen = torch.linalg.svdvals(sigma_augs).cpu().numpy()
-    sigma_obj_eigen = torch.linalg.svdvals(sigma_obj).cpu().numpy()
+    #sigma_augs_eigen = torch.linalg.svdvals(sigma_augs).cpu().numpy()
+    sigma_augs_pinv, sigma_augs_eigen = pseudoinvese(sigma_augs, matrix_sqrt=True)
+    sigma_obj_pinv, sigma_obj_eigen = pseudoinvese(sigma_obj, matrix_sqrt=True)
+    
+    sigma_augs_eigen = sigma_augs_eigen.cpu().numpy()
+    sigma_obj_eigen = sigma_obj_eigen.cpu().numpy()
     
     try:
         try:
-            discriminants_obj = scipy.linalg.eigvalsh(a=sigma_obj, b=sigma_augs)
+            # discriminants_obj = scipy.linalg.eigvalsh(a=sigma_obj, b=sigma_augs)
+            symmetric = sigma_augs_pinv @ sigma_obj @ sigma_augs_pinv
+            discriminants_obj = scipy.linalg.eigvalsh(a=symmetric)
         except LinAlgError:
-            print("Sigma_intra inversion failed")
-            eps = np.linalg.norm(sigma_augs) * torch.finfo(sigma_augs.dtype).eps
-            sigma_augs_reg = sigma_augs + eps * np.eye(sigma_augs.shape[0])
-            discriminants_obj = scipy.linalg.eigvalsh(a=sigma_obj, b=sigma_augs_reg)
-            #discriminants_obj = np.zeros_like(sigma_augs_eigen)
+            print("Symmetrized (Sigma_intra)**-0.5 @ Sigma_inter @ Sigma_intra**-0.5 inversion failed")
+            eps = np.linalg.norm(symmetric) * torch.finfo(symmetric.dtype).eps
+            symmetric_reg = symmetric + eps * np.eye(symmetric.shape[0])
+            discriminants_obj = scipy.linalg.eigvalsh(a=symmetric_reg)
     except LinAlgError:
-        print("Regularized Sigma_intra inversion failed!")
+        print("Regularized (Sigma_intra)**-0.5 @ Sigma_inter @ Sigma_intra**-0.5 inversion failed!")
         discriminants_obj = np.zeros_like(sigma_augs_eigen)
 
     try:
         try:
-            discriminants_augs = scipy.linalg.eigvalsh(a=sigma_augs, b=sigma_obj)
+            # discriminants_obj = scipy.linalg.eigvalsh(a=sigma_obj, b=sigma_augs)
+            symmetric = sigma_obj_pinv @ sigma_augs @ sigma_obj_pinv
+            discriminants_augs = scipy.linalg.eigvalsh(a=symmetric)
         except LinAlgError:
-            print("Sigma_inter inversion failed")
-            eps = np.linalg.norm(sigma_obj) * torch.finfo(sigma_obj.dtype).eps
-            sigma_obj_reg = sigma_obj + eps * np.eye(sigma_obj.shape[0])
-            discriminants_augs = scipy.linalg.eigvalsh(a=sigma_augs, b=sigma_obj_reg)
-            #discriminants_augs = np.zeros_like(discriminants_obj)
+            print("Symmetrized (Sigma_inter)**-0.5 @ Sigma_intra @ Sigma_inter**-0.5 inversion failed")
+            eps = np.linalg.norm(symmetric) * torch.finfo(symmetric.dtype).eps
+            symmetric_reg = symmetric + eps * np.eye(symmetric.shape[0])
+            discriminants_augs = scipy.linalg.eigvalsh(a=symmetric_reg)
     except LinAlgError:
-        print("Regularized Sigma_inter inversion failed!")
+        print("Regularized (Sigma_inter)**-0.5 @ Sigma_intra @ Sigma_inter**-0.5 inversion failed!")
         discriminants_augs = np.zeros_like(sigma_obj_eigen)
 
 #    # get full svd decomposition of sigma_obj
@@ -64,6 +70,24 @@ def covariance_decomposition(net, layer, data_loader, use_cuda=False, max_sample
 #    projecton = torch.sqrt(projection[:len(sigma_obj_eigen)])
 
     return sigma_augs_eigen, sigma_obj_eigen, discriminants_augs, discriminants_obj
+
+
+def pseudoinvese(M, matrix_sqrt=False):
+    """Compute full pseudoinvese of M
+    """
+    U, S, Vt = torch.linalg.svd(M, full_matrices=True)
+    
+    if torch.any(S.lt(0)):
+        eps = torch.linalg.norm(S) * torch.finfo(S.dtype).eps
+        S += eps * torch.eye(S.shape[0])
+    
+    indices = S.ne(0)
+    Sinv = S.clone()
+    Sinv[indices] = 1. / Sinv[indices]
+    
+    if matrix_sqrt:
+        Sinv = torch.sqrt(Sinv)
+    return U @ torch.diag(Sinv) @ Vt, S
 
 
 def generate_activations_prelayer_torch(net,layer,data_loader,use_cuda=False,max_samples=0):
