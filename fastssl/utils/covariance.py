@@ -3,12 +3,14 @@ from tqdm import tqdm
 import torch
 import scipy
 from numpy.linalg import LinAlgError
-def covariance_decomposition(net, layer, data_loader, use_cuda=False, max_samples=0):
+from fastssl.utils.base import split_batch_gen
+
+def covariance_decomposition(net, layer, data_loader, use_cuda=False, max_samples=0, split_batch=False):
     """ Decompose feature covariance into intra-manifold and inter-manifold terms
     
         Assumes that data_loader returns training samples together with data augmentations
     """
-    activations_arr = generate_activations_prelayer_torch(net, layer, data_loader, use_cuda, max_samples)
+    activations_arr = generate_activations_prelayer_torch(net, layer, data_loader, use_cuda, max_samples, split_batch)
     
     # activations_arr NxAxD
     nobjects = activations_arr.shape[0]
@@ -90,9 +92,9 @@ def pseudoinvese(M, matrix_sqrt=False):
     return U @ torch.diag(Sinv) @ Vt, S
 
 
-def generate_activations_prelayer_torch(net,layer,data_loader,use_cuda=False,max_samples=0):
+def generate_activations_prelayer_torch(net,layer,data_loader,use_cuda=False,max_samples=0,split_batch=False):
     batch_ = next(iter(data_loader))
-    num_augs = len(batch_) -1
+    num_augs = len(batch_) -1 # discarding labels
     ndims = net.backbone.proj[0].weight.shape[1]
     
     activations = []
@@ -103,9 +105,22 @@ def generate_activations_prelayer_torch(net,layer,data_loader,use_cuda=False,max
     if use_cuda:
         net = net.cuda()
     net.eval()
-    
+
+    if split_batch:
+        local_steps = num_augs / 5
+        num_batches = round(len(data_loader) * local_steps)
+        train_bar = tqdm(
+            split_batch_gen(
+                data_loader, num_augs, mult=5
+            ),
+            desc="Covariance decomposition",
+            total=num_batches,
+        )
+    else:
+        train_bar = tqdm(data_loader, desc="Covariance decomposition")
+
     num_samples = 0
-    for i, inp in enumerate(tqdm(data_loader, desc="Covariance decomposition")):
+    for i, inp in enumerate(train_bar):
         inp = list(inp)
         _ = inp.pop(1) # discarding labels
         num_samples += inp[0].shape[0]

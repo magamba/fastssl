@@ -101,6 +101,7 @@ Section("training", "Fast CIFAR-10 training").params(
     track_jacobian=Param(bool, "Track input Jacobian of the last feature layer", default=False),
     track_covariance=Param(bool, "Compute covariance decomposition", default=False),
     covariance_nsamples=Param(int, "Number of samples to use for estimating intra-manifold covariance", default=0),
+    covariance_augmentations=Param(int, "Number of samples to use for estimating intra-manifold covariance", default=10),
     jacobian_bigmem=Param(bool, "Use fast memory-expensive Jacobian computation algorithm, which explicitly instantiates the Jacobian tensor", default=False),
     jacobian_batch_size=Param(int, "Batch size to use for Jacobian computation.", default=128),
     jacobian_nsamples=Param(int, "Number of training samples to use for Jacobian computation. Set to 0 to use all samples (default = 0)", default=0),
@@ -141,7 +142,8 @@ def build_dataloaders(
     num_augmentations=2,
     upscale=False,
     label_noise=0,
-    extra_augmentations=False,
+    extra_augmentations=0,
+    num_augmentations_test=1,
 ):
     if os.path.splitext(train_dataset)[-1] == ".npy":
         # using precached features!!
@@ -162,6 +164,7 @@ def build_dataloaders(
                 num_augmentations=num_augmentations,
                 upscale=upscale,
                 extra_augmentations=extra_augmentations,
+                num_augmentations_test=num_augmentations_test,
             )
         elif algorithm == "linear":
             default_linear_bsz = 512
@@ -452,13 +455,22 @@ def build_model(args=None):
         model_cls = linear.LinearClassifier
 
     model = model_cls(**model_args)
+    compiled = False
     if eval.ood_eval or eval.ssl_eval or eval.jacobian_only:
         ckpt_path = gen_ckpt_path(training, eval, epoch=args.training.epochs)
         print(f"Loading model checkpoint {ckpt_path}")
-        model.load_state_dict(
-            torch.load(ckpt_path, map_location="cpu")["model"]
-        )
-    model = torch.compile(model)
+        state_dict =  torch.load(ckpt_path, map_location="cpu")["model"]
+        if '_orig' in next(iter(state_dict.keys())):
+            from collections import OrderedDict
+            state_dict_ = OrderedDict()
+            #compiled = True
+            #model = torch.compile(model)
+            for key in state_dict.keys():
+                state_dict_[key.replace('_orig_mod.', '')] = state_dict[key]
+            state_dict = state_dict_
+        model.load_state_dict(state_dict)
+    if training.algorithm != "linear" and not compiled:
+        model = torch.compile(model)
     model = model.to(memory_format=torch.channels_last).cuda()
     return model
 
@@ -1309,6 +1321,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             data_loader=loaders["train_extra"],
             use_cuda=True,
             max_samples=args.covariance_nsamples,
+            split_batch=args.covariance_augmentations > 5,
         )
         results["intra_manifold_eigen"].append((args.epochs, sigma_augs_eigen))
         results["inter_manifold_eigen"].append((args.epochs, sigma_obj_eigen))
@@ -1383,7 +1396,8 @@ def run_experiment(args):
         training.num_augmentations if not eval.ssl_eval else 2,
         upscale=upscale,
         label_noise=training.label_noise,
-        extra_augmentations=training.track_covariance,
+        extra_augmentations=training.covariance_augmentations if training.track_covariance else 0,
+        num_augmentations_test = 2 if eval.ssl_eval else 1,
     )
     if training.local_forward:
         assert training.algorithm != "linear", "Error: local forward passes only supported for SSL pretraining"
@@ -1554,6 +1568,7 @@ def run_experiment(args):
                 data_loader=loaders["train_extra"],
                 use_cuda=True,
                 max_samples=training.covariance_nsamples,
+                split_batch=training.covariance_augmentations > 5,
             )
             results["intra_manifold_eigen"].append(sigma_augs_eigen)
             results["inter_manifold_eigen"].append(sigma_obj_eigen)

@@ -267,7 +267,8 @@ def gen_image_label_pipeline_ffcv_ssl(
     device: str = "cuda:0",
     num_augmentations: int = 2,
     upscale: bool = False,
-    extra_augmentations: bool = False,
+    extra_augmentations: int = 0,
+    num_augmentations_test: int = 1,
 ):
     """Function for generating multiple augmentations from each image.
 
@@ -281,6 +282,7 @@ def gen_image_label_pipeline_ffcv_ssl(
         device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
         num_augmentations (int, optional): Number of patches. Defaults to 2.
         upscale (bool, optional): Upscale image data to 224x224 resolution. Defaults to False.
+        num_augmentations_test (int, optional): Number of patches for test loader. Defaults to 1.
 
     Returns:
         loaders: dict('train': dataloader, 'test': dataloader)
@@ -338,6 +340,21 @@ def gen_image_label_pipeline_ffcv_ssl(
             OrderOption.SEQUENTIAL
         )  # if split == 'train' else OrderOption.SEQUENTIAL
 
+        pipelines={"image": image_pipeline, "label": label_pipeline}
+        custom_field_img_mapper = {}
+        if num_augmentations_test > 1:
+            image_pipeline_augs = [
+                gen_image_pipeline_ffcv_ssl(
+                    device=device, transform_cls=transform_cls, rescale=rescale
+                )
+            ] * (
+                num_augmentations_test - 1
+            )  # creating other augmentations
+
+            for i, aug_pipeline in enumerate(image_pipeline_augs):
+                pipelines["image{}".format(i + 1)] = aug_pipeline
+                custom_field_img_mapper["image{}".format(i + 1)] = "image"
+
         loaders[split] = Loader(
             datadir[split],
             batch_size=batch_size,
@@ -345,12 +362,13 @@ def gen_image_label_pipeline_ffcv_ssl(
             os_cache=True,
             order=ordering,
             drop_last=False,
-            pipelines={"image": image_pipeline, "label": label_pipeline},
+            pipelines=pipelines,
+            custom_field_mapper=custom_field_img_mapper,
         )
 
     if extra_augmentations and train_dataset is not None:
         split = "train_extra"
-        num_augmentations = 5
+        num_augmentations = extra_augmentations
         image_pipeline1 = gen_image_pipeline_ffcv_ssl(
             device=device, transform_cls=transform_cls, rescale=rescale
         )
@@ -394,7 +412,8 @@ def cifar_ffcv(
     num_augmentations: int = 2,
     test_ffcv: bool = False,
     upscale: bool = False,
-    extra_augmentations: bool = False,
+    extra_augmentations: int = 0,
+    num_augmentations_test: int = 1,
 ):
     """Function to return dataloader for Cifar-10 SSL
 
@@ -407,6 +426,7 @@ def cifar_ffcv(
         num_augmentations (int, optional): Number of patches. Defaults to 2.
         test_ffcv (bool, optional): Flag to use pipeline for testing FFCV multi-augmentations
         upscale (bool, optional): Upscale image data to 224x224 resolution. Defaults to False
+        num_augmentations_test (int, optional): Number of patches for test loader. Defaults to 1.
 
     Returns:
         loaders : dict('train': dataloader, 'test': dataloader)
@@ -431,6 +451,7 @@ def cifar_ffcv(
     }
     if not test_ffcv:
         kwargs["extra_augmentations"] = extra_augmentations
+        kwargs["num_augmentations_test"] = num_augmentations_test
     return gen_img_label_fn(
         **kwargs
     )
