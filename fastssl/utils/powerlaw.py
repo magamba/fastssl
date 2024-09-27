@@ -12,7 +12,7 @@ def rankme(eigen):
     """
     l1 = np.sum(np.abs(eigen))
     eps = 1e-7
-    scores = eigen / l1 + eps
+    scores = np.abs(eigen) / (l1 + eps)
     entropy = - np.sum(scores * np.log(scores))
     return np.exp(entropy)
 
