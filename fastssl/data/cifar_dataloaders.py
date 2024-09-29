@@ -38,6 +38,14 @@ from fastssl.data.cifar_transforms import (
     CifarUpscaledTransform,
     CifarClassifierUpscaledTransform,
     CifarUpscaledTransformFFCV,
+    Cifar100Transform,
+    Cifar100ClassifierTransform,
+    SSLPT_CIFAR100,
+    ReScale,
+    Cifar100TransformFFCV,
+    Cifar100UpscaledTransform,
+    Cifar100ClassifierUpscaledTransform,
+    Cifar100UpscaledTransformFFCV,
 )
 
 
@@ -433,7 +441,10 @@ def cifar_ffcv(
     """
 
     # transform_cls = CifarTransform
-    transform_cls = CifarUpscaledTransformFFCV() if upscale else CifarTransformFFCV()
+    if "cifar100" in train_dataset or "cifar100" in val_dataset:
+        transform_cls = Cifar100UpscaledTransformFFCV() if upscale else Cifar100TransformFFCV()
+    else:
+        transform_cls = CifarUpscaledTransformFFCV() if upscale else CifarTransformFFCV()
     if test_ffcv:
         gen_img_label_fn = gen_image_label_pipeline_ffcv_ssl_test
     else:
@@ -481,9 +492,12 @@ def cifar_classifier_ffcv(
     Returns:
         loaders : dict('train': dataloader, 'test': dataloader)
     """
-
-    transform_cls = CifarClassifierUpscaledTransform if upscale else CifarClassifierTransform
-    transform_cls_extra_augs = CifarTransformFFCV()
+    if "cifar100" in train_dataset or "cifar100" in val_dataset:
+        transform_cls = Cifar100ClassifierUpscaledTransform if upscale else Cifar100ClassifierTransform
+        transform_cls_extra_augs = Cifar100TransformFFCV()
+    else:
+        transform_cls = CifarClassifierUpscaledTransform if upscale else CifarClassifierTransform
+        transform_cls_extra_augs = CifarTransformFFCV()
     return gen_image_label_pipeline(
         train_dataset=train_dataset,
         val_dataset=val_dataset,
@@ -497,14 +511,16 @@ def cifar_classifier_ffcv(
     )
 
 
-def cifar_pt(datadir, batch_size=None, num_workers=None, device="cuda:0", upscale=False):
+def cifar_pt(datadir, batch_size=None, num_workers=None, device="cuda:0", upscale=False, dataset="cifar10"):
     """
     Create pytorch compatible dataloaders for CIFAR-10.
     """
     loaders = {}
+    dataset_cls = torchvision.datasets.CIFAR10 if dataset == "cifar10" else torchvision.datasets.CIFAR100
+    transform = SSLPT_CIFAR(upscale=upscale) if dataset == "cifar10" else SSLPT_CIFAR100(upscale=upscale)
     for split in ["train", "test"]:
-        dataset = torchvision.datasets.CIFAR10(
-            root=datadir, train=split == "train", download=True, transform=SSLPT_CIFAR(upscale=upscale)
+        dataset = dataset_cls(
+            root=datadir, train=split == "train", download=True, transform=transform
         )
         loaders[split] = DataLoader(
             # dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
