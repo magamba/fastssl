@@ -529,21 +529,21 @@ def build_optimizer(model, args=None):
             warmup_scheduler = lr_scheduler.LambdaLR(opt, lr_lambda=warmup)
             cosine_scheduler = lr_scheduler.CosineAnnealingLR(opt, args.epochs)
             scheduler = lr_scheduler.SequentialLR(opt, [warmup_scheduler, cosine_scheduler], [warmup_epochs])
-#    elif args.algorithm == "linear":
-#        default_lr = 1e-3
-#        default_weight_decay = 1e-6
-#        return Adam(
-#            model.parameters(), lr=default_lr, weight_decay=default_weight_decay
-#        )
     elif args.algorithm == "linear":
-        default_lr = 1e-1
-        default_weight_decay = 0
-        lr_decay = 0.95
-        opt = SGD(
+        default_lr = 1e-3
+        default_weight_decay = 1e-6
+        opt = Adam(
             model.parameters(), lr=default_lr, weight_decay=default_weight_decay
         )
-        lr_lambda = lambda epoch : lr_decay
-        scheduler = lr_scheduler.MultiplicativeLR(opt, lr_lambda=lr_lambda)
+ #   elif args.algorithm == "linear":
+ #       default_lr = 1e-1
+ #       default_weight_decay = 0
+ #       lr_decay = 0.95
+ #       opt = SGD(
+ #           model.parameters(), lr=default_lr, weight_decay=default_weight_decay
+ #       )
+ #       lr_lambda = lambda epoch : lr_decay
+ #       scheduler = lr_scheduler.MultiplicativeLR(opt, lr_lambda=lr_lambda)
     else:
         raise Exception("Algorithm not implemented")
 
