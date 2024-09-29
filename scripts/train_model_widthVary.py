@@ -30,7 +30,6 @@ from torch.amp import GradScaler, autocast
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adam, SGD, lr_scheduler
 import torch._dynamo
-torch._dynamo.config.suppress_errors = True
 
 import torchvision
 from tqdm import tqdm
@@ -109,6 +108,7 @@ Section("training", "Fast CIFAR-10 training").params(
     precache=Param(bool, "Precache outputs of network", default=False),
     adaptive_ssl=Param(bool, "Use alpha to regularize SSL loss", default=False),
     num_augmentations=Param(int, "Number of augmentations to use per image", default=2),
+    train_backbone=Param(bool, "Train backbone together with linear probe", default=False),
 )
 
 Section("eval", "Fast CIFAR-10 evaluation").params(
@@ -451,6 +451,7 @@ def build_model(args=None):
             if eval.train_algorithm in ("byol")
             else training.projector_dim,
             "num_classes": num_classes,
+            "freeze_backbone": not training.train_backbone,
         }
         model_cls = linear.LinearClassifier
 
@@ -469,6 +470,7 @@ def build_model(args=None):
                 state_dict_[key.replace('_orig_mod.', '')] = state_dict[key]
             state_dict = state_dict_
         model.load_state_dict(state_dict)
+    compiled = True
     if training.algorithm != "linear" and not compiled:
         model = torch.compile(model)
     model = model.to(memory_format=torch.channels_last).cuda()
@@ -516,34 +518,43 @@ def build_optimizer(model, args=None):
         optimizer : optimizer for training model
     """
     scheduler = None
+    def warmup(current_step: int):
+        #return 1 / (10**(float(warmup_epochs - current_step)))
+        if current_step < warmup_epochs:
+            return float((current_step +1) / warmup_epochs)
+        else:
+            return 1
+
     if args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
-        opt = Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-        if "vit" in args.model:
+        if "vit" in args.model or "resnet" in args.model:
+            opt = Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
             warmup_epochs = 20
-            def warmup(current_step: int):
-                #return 1 / (10**(float(warmup_epochs - current_step)))
-                if current_step < warmup_epochs:
-                    return float((current_step +1) / warmup_epochs)
-                else:
-                    return 1
             warmup_scheduler = lr_scheduler.LambdaLR(opt, lr_lambda=warmup)
             cosine_scheduler = lr_scheduler.CosineAnnealingLR(opt, args.epochs)
             scheduler = lr_scheduler.SequentialLR(opt, [warmup_scheduler, cosine_scheduler], [warmup_epochs])
+        else:
+            opt = SGD(
+                model.parameters(), lr=args.lr, weight_decay=args.weight_decay
+            )
+            warmup_epochs = 20
+            warmup_scheduler = lr_scheduler.LambdaLR(opt, lr_lambda=warmup)
+            cosine_scheduler = lr_scheduler.CosineAnnealingLR(opt, args.epochs)
+            scheduler = lr_scheduler.SequentialLR(opt, [warmup_scheduler, cosine_scheduler], [warmup_epochs])
+#    elif args.algorithm == "linear":
+#        default_lr = 1e-3
+#        default_weight_decay = 1e-6
+#        opt = Adam(
+#            model.parameters(), lr=default_lr, weight_decay=default_weight_decay
+#        )
     elif args.algorithm == "linear":
-        default_lr = 1e-1
-        default_weight_decay = 1e-6
-        opt = Adam(
-            model.parameters(), lr=default_lr, weight_decay=default_weight_decay
-        )
-#   elif args.algorithm == "linear":
-#       default_lr = 1e-1
-#       default_weight_decay = 0
-#       lr_decay = 0.95
-#       opt = SGD(
-#           model.parameters(), lr=default_lr, weight_decay=default_weight_decay
-#       )
-#       lr_lambda = lambda epoch : lr_decay
-#       scheduler = lr_scheduler.MultiplicativeLR(opt, lr_lambda=lr_lambda)
+       default_lr = 1e-1
+       default_weight_decay = 0
+       lr_decay = 0.95
+       opt = SGD(
+           model.parameters(), lr=default_lr, weight_decay=default_weight_decay
+       )
+       lr_lambda = lambda epoch : lr_decay
+       scheduler = lr_scheduler.MultiplicativeLR(opt, lr_lambda=lr_lambda)
     else:
         raise Exception("Algorithm not implemented")
 

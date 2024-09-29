@@ -20,6 +20,7 @@ class LinearClassifier(nn.Module):
         ckpt_epoch=None,
         feat_dim=2048,
         proj_hidden_dim=128,
+        freeze_backbone=True
     ):
         super(LinearClassifier, self).__init__()
         # set arguments
@@ -38,7 +39,7 @@ class LinearClassifier(nn.Module):
             )
 
             # load pretrained weights
-            self.load_backbone(ckpt_path, requires_grad=False)
+            self.load_backbone(ckpt_path, requires_grad=not freeze_backbone)
         else:
             # not using any backbone
             self.backbone = nn.Identity()
