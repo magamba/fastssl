@@ -1,17 +1,16 @@
 #! /bin/bash
 #SBATCH -A NAISS2023-5-476
 #SBATCH -p alvis
-#SBATCH --gpus-per-node=A40:1
-#SBATCH -t 4:00:00
+#SBATCH --gpus-per-node=A100:1
+#SBATCH -t 9:00:00
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /cephyr/users/%u/Alvis/linear-regions/logs/%A_%a.out
 #SBATCH --error /cephyr/users/%u/Alvis/linear-regions/logs/%A_%a.err
-#SBATCH --array 45-59%4
-####SBATCH --array 87-115
-####SBATCH --array 0-173%30
+#SBATCH --array 75-89%8
 
-NAME="ssl_simclr_robustness"
+#NAME="ssl_barlow_twins_robustness"
+NAME="ssl_barlow_twins_robustness_inverse_scaling"
 
 # load env
 source scripts/setup_env.alvis
@@ -31,41 +30,46 @@ fi
 WANDB__SERVICE_WAIT=300
 
 #dataset='stl10'
-dataset='cifar10'
+#dataset='cifar10'
 #dataset='cifar100'
+dataset='imagenet100'
 if [ $dataset = 'stl10' ]
 then
     batch_size=256
     jac_batch_size=8
-    proj_str="simclr-stl10-"
+    proj_str="bt-stl10-"
     ckpt_str="-stl10"
-elif [ $dataset = 'cifar100' ]; then
+elif [ $dataset = 'cifar10' ]; then
     batch_size=512
     jac_batch_size=512
-    proj_str="simclr-cifar100-"
-    ckpt_str="-cifar100"
+    proj_str="bt-cifar10-"
+    ckpt_str="-cifar10"
+elif [ $dataset = 'imagenet100' ]; then
+    batch_size=512
+    jac_batch_size=256
+    proj_str="bt-imagenet100-"
+    ckpt_str="-imagenet100"
 else
     batch_size=512
     jac_batch_size=512
-    proj_str="simclr-cifar10-"
-    ckpt_str="-cifar10"
+    proj_str="bt-cifar100-"
+    ckpt_str="-cifar100"
 fi
-pretrain_dataset="$dataset"
+pretrain_dataset=$dataset
 
-PRETRAIN="True"
-LINEAR_EVAL="True"
-NOISY_EVAL=""
-OOD_EVAL="True"
-SSL_EVAL="True" # empty string to disable
+PRETRAIN="True" # empty string to disable
+LINEAR_EVAL="True" # empty string to disable
+NOISY_EVAL="" # empty string to disable
+OOD_EVAL="True" # empty string to disable
+SSL_EVAL="" # empty string to disable
 
-temps=(0.005 0.02 0.05 0.1 0.2 0.5)
+lambdas=(0.0001 0.0002 0.0004 0.001 0.002 0.005 0.01 0.02)
 #pdepths=(1 2 3 4)
 widths=({8..64..4})
 pdepth=$1
 dsize=$2
 seed=$3
 naugs=$4
-epochs=100
 
 if [ "$naugs" == "" ]; then
     naugs=2
@@ -105,10 +109,16 @@ conf_id=$((SLURM_ARRAY_TASK_ID/WIDTHS))
 width_id=$((SLURM_ARRAY_TASK_ID%WIDTHS))
 
 width=${widths[width_id]}
-temp=${temps[conf_id]}
-temp=0.1 ## MANUALLY OVERRIDING TEMP
+lambd=${lambdas[conf_id]}
+
 num_workers=16
 pdim=$(($width * 32))
+
+### OVERRIDING LAMBDA
+lambd=$(python -c "print(float(1. / $pdim))")
+epochs=100
+#epochs=400
+#epochs=100
 
 if [ "$seed" == "" ]; then
     seed=0
@@ -136,18 +146,26 @@ else
     trainset="${DATA_DIR}"/"$dataset"_train.beton
 fi
 
+if [ "$dataset" = "imagenet100" ]; then
+    trainset="${DATA_DIR}"/$dataset
+    testset="${DATA_DIR}"/$dataset
+fi
+
 if [ "$PRETRAIN" != "" ]; then
+
 echo "Pretraining model"
 
 #                    --training.track_alpha=True \
 #                    --training.track_jacobian=True \
 #                    --training.track_covariance=True \
 
-# Let's train a SSL (SimCLR) model with the above hyperparams
-$PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_SimCLR.yaml \
-                    --training.temperature=$temp --training.projector_dim=$pdim \
+# Let's train a SSL (BarlowTwins) model with the above hyperparams
+$PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.yaml \
+                    --training.lambd=$lambd --training.projector_dim=$pdim \
                     --training.projector_depth=$pdepth \
+                    --training.datadir=$trainset \
                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
+                    --training.dsize=$dsize \
                     --training.batch_size=$batch_size --training.model=$model \
                     --training.seed=$seed \
                     --training.train_dataset=${trainset} \
@@ -157,8 +175,7 @@ $PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_SimCLR.yam
                     --training.covariance_augmentations=10 \
                     --training.jacobian_batch_size=$jac_batch_size \
                     --training.weight_decay=1e-5 \
-                    --training.algorithm="SimCLR" \
-                    --training.epochs="$epochs" \
+                    --training.epochs=$epochs \
                     --training.num_augmentations=$naugs \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
@@ -166,23 +183,24 @@ $PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_SimCLR.yam
 status=$?
 
 # let's save the model checkpoints to persistent storage
-destdir=$checkpt_dir/resnet18/width${width}/"$naugs"_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/"$naugs"_augs_train
+destdir=$checkpt_dir/resnet18/width${width}/${naugs}_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/${naugs}_augs_train
 if [ ! -d $destdir ]; then
     mkdir -p $destdir
 fi
-cp -v "$SLURM_TMPDIR/exp_SimCLR_"$epochs".pth" "$destdir/exp_SimCLR_"$epochs"_seed_"$seed".pt"
+cp -v "$SLURM_TMPDIR/exp_ssl_"$epochs".pth" "$destdir/exp_ssl_"$epochs"_seed_"$seed".pt"
 
 fi # end pretrain
 
-src_checkpt="$checkpt_dir/resnet18/width"$width"/"$naugs"_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/"$naugs"_augs_train/exp_SimCLR_"$epochs"_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/resnet18/width"$width"/"$naugs"_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/"$naugs"_augs_train/exp_ssl_"$epochs"_seed_"$seed".pt"
+encoder_checkpt="$src_checkpt"
 
 if [ ! -f "$src_checkpt" ];
 then
-    echo "Error: file not found $src_checkpt"
+    echo "Error: no file not found $src_checkpt"
     exit 1
 else
     echo "Copying SSL features to local storage"
-    cp -v "$src_checkpt" "$SLURM_TMPDIR/exp_SimCLR_"$epochs".pth"
+    cp -v "$src_checkpt" "$SLURM_TMPDIR/exp_ssl_"$epochs".pth"
 fi
 
 new_status=$?
@@ -190,21 +208,23 @@ status=$((status|new_status))
 
 model=resnet18feat_width${width}
 
+
 if [ "$LINEAR_EVAL" != "" ]; then
 echo "Precaching features"
 
 # running eval for 0 label noise
 # Let's precache features, should take ~35 seconds (rtx8000)
 $PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
-                    --training.temperature=$temp --training.projector_dim=$pdim \
+                    --training.lambd=$lambd --training.projector_dim=$pdim \
+                    --training.datadir=$trainset \
                     --training.projector_depth=$pdepth \
                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
+                    --training.dsize=$dsize \
                     --training.batch_size=$batch_size --training.model=$model \
                     --training.seed=$seed \
                     --training.num_workers=$num_workers \
                     --training.train_dataset=${trainset} \
                     --training.val_dataset=${testset} \
-                    --eval.train_algorithm="SimCLR" \
                     --eval.num_augmentations_pretrain=$naugs \
                     --eval.epoch=$epochs \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
@@ -214,22 +234,24 @@ status=$((status|new_status))
 
 echo "Linear probe training"
 
+#                    --training.track_jacobian=True \
+
 # run linear eval on precached features from model: using default seed 42
 $PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml \
-                    --training.temperature=$temp --training.projector_dim=$pdim \
+                    --training.lambd=$lambd --training.projector_dim=$pdim \
+                    --training.datadir=$trainset \
                     --training.projector_depth=$pdepth \
                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
+                    --training.dsize=$dsize \
                     --training.batch_size=$batch_size --training.model=$model \
                     --training.seed=$seed \
                     --training.num_workers=$num_workers \
                     --training.train_dataset=${trainset} \
                     --training.val_dataset=${testset} \
                     --training.log_interval=10 \
-                    --training.track_jacobian=True \
                     --training.jacobian_batch_size=$jac_batch_size \
-                    --eval.train_algorithm="SimCLR" \
-                    --eval.num_augmentations_pretrain=$naugs \
                     --eval.epoch=$epochs \
+                    --eval.num_augmentations_pretrain=$naugs \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
 new_status=$?
@@ -238,9 +260,11 @@ status=$((status|new_status))
 fi # end linear eval
 
 if [ "$NOISY_EVAL" != "" ]; then
+
 echo "Noisy labels training"
 
 for noise in 10 20 40 60 80 100; do
+
     # running eval with label noise
     wandb_projname="$proj_str"'ssl-robustness-noise'$noise
     checkpt_dir="${SAVE_DIR}"/"$NAME""_noise"$noise"$ckpt_str"
@@ -252,24 +276,30 @@ for noise in 10 20 40 60 80 100; do
 
     # dataset locations
     testset="${DATA_DIR}"/$dataset"_test.beton"
-    if [ "$dsize" != "0" ]; then
+    if [ "$dsize" != "" ] && [ "$dsize" != "0" ]; then
         trainset="${DATA_DIR}"/$dataset"-nsamples_"$dsize"-Noise_"$noise"/train.beton"
     else
         trainset="${DATA_DIR}"/$dataset"-Noise_"$noise"/train.beton"
     fi
+    
+    if [ "$dataset" = "imagenet100" ]; then
+        trainset="${DATA_DIR}"/$dataset
+        testset="${DATA_DIR}"/$dataset
+    fi
 
     # Let's precache features, should take ~35 seconds (rtx8000)
     $PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
-                        --training.temperature=$temp --training.projector_dim=$pdim \
+                        --training.lambd=$lambd --training.projector_dim=$pdim \
                         --training.projector_depth=$pdepth \
+                        --training.datadir=$trainset \
                         --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
+                        --training.dsize=$dsize \
                         --training.batch_size=$batch_size --training.model=$model \
                         --training.seed=$seed \
                         --training.num_workers=$num_workers \
                         --training.train_dataset=${trainset} \
                         --training.val_dataset=${testset} \
                         --training.label_noise=$noise \
-                        --eval.train_algorithm="SimCLR" \
                         --eval.epoch=$epochs \
                         --eval.num_augmentations_pretrain=$naugs \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
@@ -277,11 +307,15 @@ for noise in 10 20 40 60 80 100; do
     new_status=$?
     status=$((status|new_status))
 
+#                        --training.track_jacobian=True \
+
     # run linear eval on precached features from model: using default seed 42
     $PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml \
-                        --training.temperature=$temp --training.projector_dim=$pdim \
+                        --training.lambd=$lambd --training.projector_dim=$pdim \
                         --training.projector_depth=$pdepth \
+                        --training.datadir=$trainset \
                         --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
+                        --training.dsize=$dsize \
                         --training.batch_size=$batch_size --training.model=$model \
                         --training.seed=$seed \
                         --training.num_workers=$num_workers \
@@ -289,11 +323,9 @@ for noise in 10 20 40 60 80 100; do
                         --training.val_dataset=${testset} \
                         --training.log_interval=20 \
                         --training.label_noise=$noise \
-                        --training.track_jacobian=True \
                         --training.jacobian_batch_size=$jac_batch_size \
-                        --eval.train_algorithm="SimCLR" \
-                        --eval.num_augmentations_pretrain=$naugs \
                         --eval.epoch=$epochs \
+                        --eval.num_augmentations_pretrain=$naugs \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                         --logging.wandb_project=$wandb_projname
 
@@ -304,6 +336,7 @@ done
 
 fi # end noisy eval
 
+
 if [ "$OOD_EVAL" != "" ]; then
 echo "OOD evaluation"
 
@@ -311,11 +344,11 @@ dataset="$pretrain_dataset""c"
 
 checkpt_dir="${SAVE_DIR}"/"$NAME""$ckpt_str"
 
-src_checkpt="$checkpt_dir/resnet18/width"$width"/"$naugs"_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/"$naugs"_augs_train/exp_SimCLR_"$epochs"_seed_"$seed".pt"
+src_checkpt="$checkpt_dir/resnet18/width"$width"/"$naugs"_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/"$naugs"_augs_train/exp_ssl_"$epochs"_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then
-    echo "Error: file not found $src_checkpt"
+    echo "Error: no file not found $src_checkpt"
     exit 1
 else
     echo "Copying SSL features to local storage"
@@ -331,25 +364,32 @@ else
     trainset="${DATA_DIR}"/$pretrain_dataset"_train.beton"
 fi
 
-# Let's precache features, should take ~35 seconds (rtx8000)
-$PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
-                    --training.temperature=$temp --training.projector_dim=$pdim \
-                    --training.projector_depth=$pdepth \
-                    --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
-                    --training.batch_size=$batch_size --training.model=$model \
-                    --training.seed=$seed \
-                    --training.num_workers=$num_workers \
-                    --training.train_dataset=${trainset} \
-                    --training.val_dataset=${testset} \
-                    --eval.train_algorithm="SimCLR" \
-                    --eval.num_augmentations_pretrain=$naugs \
-                    --eval.epoch=$epochs \
-                    --logging.use_wandb=True --logging.wandb_group=$wandb_group \
-                    --logging.wandb_project=$wandb_projname
-new_status=$?
-status=$((status|new_status))
+if [ "$dataset" = "imagenet100c" ]; then
+    trainset="${DATA_DIR}"/$pretrain_dataset
+    testset="${DATA_DIR}"/$pretrain_dataset
+fi
 
-src_checkpt="$checkpt_dir/resnet18/width"$width"/"$naugs"_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-06/1_augs_eval/exp_linear_200_seed_"$seed".pt"
+if [ "$dataset" != "imagenet100c" ]; then
+    # Let's precache features, should take ~35 seconds (rtx8000)
+    $PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
+                        --training.lambd=$lambd --training.projector_dim=$pdim \
+                        --training.projector_depth=$pdepth \
+                        --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
+                        --training.dsize=$dsize \
+                        --training.batch_size=$batch_size --training.model=$model \
+                        --training.seed=$seed \
+                        --training.num_workers=$num_workers \
+                        --training.train_dataset=${trainset} \
+                        --training.val_dataset=${testset} \
+                        --eval.epoch=$epochs \
+                        --eval.num_augmentations_pretrain=$naugs \
+                        --logging.use_wandb=True --logging.wandb_group=$wandb_group \
+                        --logging.wandb_project=$wandb_projname
+    new_status=$?
+    status=$((status|new_status))
+fi
+
+src_checkpt="$checkpt_dir/resnet18/width"$width"/"$naugs"_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-06/1_augs_eval/exp_linear_200_seed_"$seed".pt"
 
 if [ ! -f "$src_checkpt" ];
 then
@@ -357,7 +397,7 @@ then
     exit 1
 else
     echo "Copying linear features to local storage"
-    cp -v "$src_checkpt" "$SLURM_TMPDIR/exp_SimCLR_200.pth"
+    cp -v "$src_checkpt" "$SLURM_TMPDIR/exp_ssl_200.pth"
 fi
 
 
@@ -378,45 +418,61 @@ for noise in ${ood_noise_types[@]}; do
     else
         trainset="${DATA_DIR}"/$pretrain_dataset"_train.beton"
     fi
+    
+    linear_probe_args=""
+    if [ "$dataset" = "imagenet100c" ]; then
+        trainset="${DATA_DIR}"/$pretrain_dataset
+        testset="${DATA_DIR}"/"$pretrain_dataset"-c/$noise
+        echo "Copying encoder features to local storage"
+        cp -v "$encoder_checkpt" "$SLURM_TMPDIR/exp_ssl_100.pth"
+        linear_probe_args="--eval.linear_probe_ckpt=$src_checkpt"
 
-    # Let's precache features, should take ~35 seconds (rtx8000)
-    $PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
-                        --training.temperature=$temp --training.projector_dim=$pdim \
-                        --training.projector_depth=$pdepth \
-                        --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
-                        --training.batch_size=$batch_size --training.model=$model \
-                        --training.seed=$seed \
-                        --training.num_workers=$num_workers \
-                        --training.train_dataset=${trainset} \
-                        --training.val_dataset=${testset} \
-                        --eval.train_algorithm="SimCLR" \
-                        --eval.num_augmentations_pretrain=$naugs \
-                        --eval.epoch=$epochs \
-                        --logging.use_wandb=True --logging.wandb_group=$wandb_group \
-                        --logging.wandb_project=$wandb_projname
+    fi
 
-    new_status=$?
-    status=$((status|new_status))
+    if [ "$dataset" != "imagenet100c" ]; then
+        # Let's precache features, should take ~35 seconds (rtx8000)
+        $PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
+                            --training.lambd=$lambd --training.projector_dim=$pdim \
+                            --training.datadir=$testset \
+                            --training.projector_depth=$pdepth \
+                            --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
+                            --training.dsize=$dsize \
+                            --training.batch_size=$batch_size --training.model=$model \
+                            --training.seed=$seed \
+                            --training.num_workers=$num_workers \
+                            --training.train_dataset=${trainset} \
+                            --training.val_dataset=${testset} \
+                            --eval.num_augmentations_pretrain=$naugs \
+                            --eval.epoch=$epochs \
+                            --logging.use_wandb=True --logging.wandb_group=$wandb_group \
+                            --logging.wandb_project=$wandb_projname
+
+        new_status=$?
+        status=$((status|new_status))
+    fi
+
+#                        --training.track_jacobian=True \
 
     # run linear eval on precached features from model: using default seed 42
     $PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml \
-                        --training.temperature=$temp --training.projector_dim=$pdim \
+                        --training.lambd=$lambd --training.projector_dim=$pdim \
                         --training.projector_depth=$pdepth \
+                        --training.datadir=$testset \
                         --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
+                        --training.dsize=$dsize \
                         --training.batch_size=$batch_size --training.model=$model \
                         --training.seed=$seed \
                         --training.num_workers=$num_workers \
                         --training.train_dataset=${trainset} \
                         --training.val_dataset=${testset} \
                         --training.log_interval=10 \
-                        --training.track_jacobian=True \
                         --training.jacobian_batch_size=$jac_batch_size \
-                        --eval.train_algorithm="SimCLR" \
-                        --eval.num_augmentations_pretrain=$naugs \
                         --eval.ood_eval=True \
                         --eval.ood_noise_type=$noise \
+                        --eval.num_augmentations_pretrain=$naugs \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
-                        --logging.wandb_project=$wandb_projname
+                        --logging.wandb_project=$wandb_projname \
+                        $linear_probe_args
 
     new_status=$?
     status=$((status|new_status))
@@ -429,7 +485,7 @@ if [ "$SSL_EVAL" != "" ]; then
     model=resnet18proj_width${width}
 
     # copy checkpoint of full model
-    src_checkpt="$checkpt_dir/resnet18/width"$width"/"$naugs"_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/"$naugs"_augs_train/exp_SimCLR_"$epochs"_seed_"$seed".pt"
+    src_checkpt="$checkpt_dir/resnet18/width"$width"/"$naugs"_augs/lambd_"$(printf %.6f $lambd)"_pdim_"$pdim"_pdepth_"$pdepth"_lr_0.001_wd_1e-05/"$naugs"_augs_train/exp_ssl_"$epochs"_seed_"$seed".pt"
 
     if [ ! -f "$src_checkpt" ];
     then
@@ -437,7 +493,7 @@ if [ "$SSL_EVAL" != "" ]; then
         exit 1
     else
         echo "Copying SSL features to local storage"
-        cp -v "$src_checkpt" "$SLURM_TMPDIR/exp_ssl_"$epochs".pth"
+        cp -v "$src_checkpt" "$SLURM_TMPDIR/exp_ssl_100.pth"
     fi
 
 
@@ -448,24 +504,32 @@ if [ "$SSL_EVAL" != "" ]; then
     else
         trainset="${DATA_DIR}"/"$pretrain_dataset"_train.beton
     fi
+    
+    if [ "$dataset" = "imagenet100c" ]; then
+        trainset="${DATA_DIR}"/$pretrain_dataset
+        testset="${DATA_DIR}"/$pretrain_dataset
+    fi
 
-    $PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_SimCLR.yaml \
-                        --training.temperature=$temp --training.projector_dim=$pdim \
+#                        --training.track_alpha=True \
+
+    $PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.yaml \
+                        --training.lambd=$lambd --training.projector_dim=$pdim \
                         --training.projector_depth=$pdepth \
                         --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
+                        --training.datadir=$testset \
+                        --training.dsize=$dsize \
                         --training.batch_size=$batch_size --training.model=$model \
                         --training.seed=$seed \
                         --training.train_dataset=${trainset} \
                         --training.val_dataset=${testset} \
                         --training.num_workers=$num_workers \
                         --training.log_interval=20 \
-                        --training.track_alpha=True \
                         --training.track_covariance=True \
                         --training.covariance_augmentations=10 \
+                        --training.convariance_nsamples=10000 \
                         --training.jacobian_batch_size=$jac_batch_size \
                         --training.weight_decay=1e-5 \
                         --training.num_augmentations=$naugs \
-                        --training.algorithm="SimCLR" \
                         --eval.ssl_eval=True \
                         --eval.epoch=$epochs \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
@@ -485,22 +549,29 @@ if [ "$SSL_EVAL" != "" ]; then
         else
             trainset="${DATA_DIR}"/$pretrain_dataset"_train.beton"
         fi
+        
+        if [ "$dataset" = "imagenet100c" ]; then
+            trainset="${DATA_DIR}"/$pretrain_dataset
+            testset="${DATA_DIR}"/"$pretrain_dataset"-c/$noise
+        fi
 
-        $PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_SimCLR.yaml \
-                            --training.temperature=$temp --training.projector_dim=$pdim \
+#                            --training.track_alpha=True \
+
+        $PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.yaml \
+                            --training.lambd=$lambd --training.projector_dim=$pdim \
                             --training.projector_depth=$pdepth \
                             --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
+                            --training.datadir=$testset \
+                            --training.dsize=$dsize \
                             --training.batch_size=$batch_size --training.model=$model \
                             --training.seed=$seed \
                             --training.train_dataset=${trainset} \
                             --training.val_dataset=${testset} \
                             --training.num_workers=$num_workers \
                             --training.log_interval=20 \
-                            --training.track_alpha=True \
                             --training.jacobian_batch_size=$jac_batch_size \
                             --training.weight_decay=1e-5 \
                             --training.num_augmentations=$naugs \
-                            --training.algorithm="SimCLR" \
                             --eval.ssl_eval=True \
                             --eval.ood_noise_type=$noise \
                             --eval.epoch=$epochs \

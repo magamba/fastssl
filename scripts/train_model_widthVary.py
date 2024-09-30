@@ -109,6 +109,7 @@ Section("training", "Fast CIFAR-10 training").params(
     adaptive_ssl=Param(bool, "Use alpha to regularize SSL loss", default=False),
     num_augmentations=Param(int, "Number of augmentations to use per image", default=2),
     train_backbone=Param(bool, "Train backbone together with linear probe", default=False),
+    dsize=Param(float, "Subsample dataset down to total size DSIZE expressed as a ratio in [0,1)", default=0),
 )
 
 Section("eval", "Fast CIFAR-10 evaluation").params(
@@ -122,6 +123,7 @@ Section("eval", "Fast CIFAR-10 evaluation").params(
     ssl_eval=Param(bool, "Evaluate SSL loss on test set and exit", default=False),
     ood_eval=Param(bool, "Evaluate OOD robustness on test set and exit", default=False),
     ood_noise_type=Param(str, "OOD noise type", default=""),
+    linear_probe_ckpt=Param(str, "Path to model checkpoint for linear probe, to be loaded on top of encoder checkpoints", default=""),
 )
 
 Section("logging", "Fast CIFAR-10 logging options").params(
@@ -144,6 +146,7 @@ def build_dataloaders(
     label_noise=0,
     extra_augmentations=0,
     num_augmentations_test=1,
+    dsize=0,
 ):
     if os.path.splitext(train_dataset)[-1] == ".npy":
         # using precached features!!
@@ -211,7 +214,7 @@ def build_dataloaders(
             # num_workers=num_workers)
         else:
             raise Exception("Algorithm not implemented")
-    elif dataset == "imagenet":
+    elif "imagenet" in dataset:
         if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
 #            return imagenet_ffcv(
 #                train_dataset,
@@ -225,6 +228,9 @@ def build_dataloaders(
                  datadir,
                  batch_size,
                  num_workers,
+                 extra_augmentations=extra_augmentations,
+                 dsize=dsize,
+                 num_augmentations=num_augmentations,
             )
         elif algorithm == "linear":
             default_linear_bsz = 512
@@ -239,6 +245,9 @@ def build_dataloaders(
                  datadir,
                  default_linear_bsz,
                  num_workers,
+                 label_noise=label_noise,
+                 ood_eval= dataset in ["imagenet100c", "imagenetc"],
+                 dsize=dsize,
              )
     else:
         raise Exception("Dataset {} not supported".format(dataset))
@@ -436,10 +445,10 @@ def build_model(args=None):
         
         if training.dataset in ["cifar10", "stl10", "cifar10c"]:
             num_classes = 10
-        elif "imagenet" in training.dataset:
-            num_classes = 1000
-        else:
+        elif training.dataset in ["cifar100", "cifar100c", "imagenet100", "imagenet100c"]:
             num_classes = 100
+        else:
+            num_classes = 1000
         
         model_args = {
             "bkey": model_type,
@@ -457,7 +466,21 @@ def build_model(args=None):
 
     model = model_cls(**model_args)
     compiled = False
-    if eval.ood_eval or eval.ssl_eval or eval.jacobian_only:
+    if eval.ood_eval:
+        ckpt_path = gen_ckpt_path(training, eval, epoch=args.training.epochs)
+       	strict_loading = eval.linear_probe_ckpt == ""
+        missing_keys, unexpected_keys = model.load_state_dict(
+            torch.load(ckpt_path, map_location="cpu")["model"], strict=strict_loading,
+        )
+        if len(unexpected_keys) > 0:
+            assert torch.all(torch.as_tensor(['proj' in str(k) for k in unexpected_keys], dtype=torch.bool)), f"Error: unexpected model keys: {unexpected_keys}"
+        if len(missing_keys) > 0:
+            assert torch.all(torch.as_tensor(['fc' in str(k) for k in missing_keys], dtype=torch.bool)), f"Error: can only load linear probe checkpoints, but the following keys are missing: {missing_keys}"
+            print(f"Loading linear probe checkpoint {eval.linear_probe_ckpt}")
+            linear_state_dict = torch.load(eval.linear_probe_ckpt, map_location="cpu")["model"]
+            state_dict = { str(k).split(".")[1]: val for k, val in linear_state_dict.items() }
+            model.fc.load_state_dict(state_dict)
+    elif eval.ssl_eval or eval.jacobian_only:
         ckpt_path = gen_ckpt_path(training, eval, epoch=args.training.epochs)
         print(f"Loading model checkpoint {ckpt_path}")
         state_dict =  torch.load(ckpt_path, map_location="cpu")["model"]
@@ -494,11 +517,12 @@ def build_loss_fn(args=None):
             y = inp.pop(1)
             num_augs = len(inp)
             # x, y = inp
-            for x in inp:
-                x = x.cuda(non_blocking=True)
+            #for x in inp:
+            #    x = x.cuda(non_blocking=True)
+            inp = [x.cuda(non_blocking=True) for x in inp]
             y = y.cuda(non_blocking=True)
             # x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True)
-            logits = model(x)
+            logits = model(inp[-1])
             #return CrossEntropyLoss(label_smoothing=0.1)(logits, y)
             return CrossEntropyLoss()(logits, y)
 
@@ -690,13 +714,14 @@ def eval_step(model, dataloader, epoch=None, epochs=None):
         inp = list(inp)
         # WARNING: every epoch could have different augmentations of images
         target = inp.pop(1)
-        for x in inp:
-            x = x.cuda(non_blocking=True)
-        target = target.cuda(non_blocking=True)
-        total_samples += inp[0].shape[0]
-        # total_samples += data.shape[0]
-        # data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
         with autocast(device_type="cuda"):
+            #for x in inp:
+            #    x = x.cuda(non_blocking=True)
+            inp = [x.cuda(non_blocking=True) for x in inp]
+            target = target.cuda(non_blocking=True)
+            total_samples += inp[0].shape[0]
+            # total_samples += data.shape[0]
+            # data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
             logits = model(inp)
             preds = torch.argsort(logits, dim=1, descending=True)
             total_correct_1 += torch.sum(
@@ -734,8 +759,9 @@ def ood_eval(model, dataloader, epoch=None, epochs=None):
         inp = list(inp)
         # WARNING: every epoch could have different augmentations of images
         target = inp.pop(1)
-        for x in inp:
-            x = x.cuda(non_blocking=True)
+        #for x in inp:
+        #    x = x.cuda(non_blocking=True)
+        inp = [x.cuda(non_blocking=True) for x in inp]
         target = target.cuda(non_blocking=True)
         total_samples += inp[0].shape[0]
         # total_samples += data.shape[0]
@@ -766,6 +792,50 @@ def ood_eval(model, dataloader, epoch=None, epochs=None):
 
     acc_1 = total_correct_1.sum(dim=-1).cpu().numpy() / samples_per_strength
     acc_5 = total_correct_5.sum(dim=-1).cpu().numpy() / samples_per_strength
+    return acc_1, acc_5
+
+
+def ood_eval_imagenet(model, dataloader_list, epoch=None, epochs=None):
+    """ OOD evaluation for ImageNet-C dataset
+    """
+    model.eval()
+
+    corr_strengths = len(dataloader_list)
+    total_correct_1 = torch.zeros(corr_strengths, device="cuda:0")
+    total_correct_5 = torch.zeros_like(total_correct_1)
+    
+    for l, dataloader in enumerate(dataloader_list):
+        total_samples = 0
+        test_bar = tqdm(dataloader, desc="OOD Eval")
+        for inp in test_bar:
+            # for data, target in test_bar:
+            inp = list(inp)
+            # WARNING: every epoch could have different augmentations of images
+            target = inp.pop(1)
+            inp = [ x.cuda(non_blocking=True) for x in inp ]
+            target = target.cuda(non_blocking=True)
+            total_samples += inp[0].shape[0]
+            # total_samples += data.shape[0]
+            # data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
+            with autocast(device_type="cuda"):
+                logits = model(inp)
+                preds = torch.argsort(logits, dim=1, descending=True)
+                total_correct_1[l] += torch.sum(
+                    (preds[:, 0:1] == target[:, None]).any(dim=-1).float()
+                )
+                total_correct_5[l] += torch.sum(
+                    (preds[:, 0:5] == target[:, None]).any(dim=-1).float()
+                )
+
+            acc_1 = total_correct_1[l].item() / total_samples * 100
+            acc_5 = total_correct_5[l].item() / total_samples * 100
+            test_bar.set_description(
+                "{} Level: [{}/{}] Epoch: [{}/{}] ACC@1: {:.2f}% ACC@5: {:.2f}%".format(
+                    "Test", l + 1, corr_strengths, epoch, epochs, acc_1, acc_5
+                )
+            )
+    acc_1 = total_correct_1.cpu().numpy() / total_samples * 100
+    acc_5 = total_correct_5.cpu().numpy() / total_samples * 100
     return acc_1, acc_5
 
 
@@ -924,10 +994,11 @@ def precache_outputs(model, loaders, args, eval_args):
             sample_idx = inp.pop(1) # sample_id
             noise_ratio += torch.ne(target, ground_truth).sum().float().item()
             num_samples += target.shape[0]
-        for x in inp:
-            x = x.cuda(non_blocking=True)
-        # data = data.cuda(non_blocking=True)
         with autocast(device_type="cuda"):
+            #for x in inp:
+            #    x = x.cuda(non_blocking=True)
+            inp = [x.cuda(non_blocking=True) for x in inp]
+            # data = data.cuda(non_blocking=True)
             with torch.no_grad():
                 out_augs = [model(x) for x in inp]
                 # mean of features across different augmentations of each image
@@ -954,10 +1025,11 @@ def precache_outputs(model, loaders, args, eval_args):
         inp = list(inp)
         # WARNING: every epoch could have different augmentations of images
         target = inp.pop(1)
-        for x in inp:
-            x = x.cuda(non_blocking=True)
-        # data = data.cuda(non_blocking=True)
         with autocast(device_type="cuda"):
+            #for x in inp:
+            #    x = x.cuda(non_blocking=True)
+            inp = [x.cuda(non_blocking=True) for x in inp]
+            # data = data.cuda(non_blocking=True)
             with torch.no_grad():
                 out_augs = [model(x) for x in inp]
                 # mean of features across different augmentations of each image
@@ -1037,52 +1109,53 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
         )
 
     if args.algorithm == "linear":
-        if args.use_autocast:
-            activations = powerlaw.generate_activations_prelayer_torch(
-                net=model,
-                layer=model.fc,
-                data_loader=loaders["train"],
-                use_cuda=True,
-            )
-            activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
-            with autocast(device_type="cuda"):
-                try:
-                    tmin, tmax = 3, min(50, activations.shape[1])
-                    alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
-                        activations_eigen, trange=np.arange(tmin, tmax)
-                    )
-                    rk = powerlaw.rankme(activations_eigen)
-                except:
-                    alpha, R2, R2_100, rk = np.nan, np.nan, np.nan, np.nan
-                # debug_plot(activations_eigen,alpha,ypred,R2,R2_100,'test_full_early_{:.4f}.png'.format(args.lambd))
-                # save_path = gen_ckpt_path(args, args.algorithm, args.epochs, 'results_{}_full_early_alpha'.format(args.dataset), 'npy')
-                # np.save(save_path,dict(alpha=alpha,R2=R2,R2_100=R2_100))
-                # breakpoint()
+        if args.track_alpha:
+            if args.use_autocast:
+                activations = powerlaw.generate_activations_prelayer_torch(
+                    net=model,
+                    layer=model.fc,
+                    data_loader=loaders["train"],
+                    use_cuda=True,
+                )
+                activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
+                with autocast(device_type="cuda"):
+                    try:
+                        tmin, tmax = 3, min(50, activations.shape[1])
+                        alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
+                            activations_eigen, trange=np.arange(tmin, tmax)
+                        )
+                        rk = powerlaw.rankme(activations_eigen)
+                    except:
+                        alpha, R2, R2_100, rk = np.nan, np.nan, np.nan, np.nan
+                    # debug_plot(activations_eigen,alpha,ypred,R2,R2_100,'test_full_early_{:.4f}.png'.format(args.lambd))
+                    # save_path = gen_ckpt_path(args, args.algorithm, args.epochs, 'results_{}_full_early_alpha'.format(args.dataset), 'npy')
+                    # np.save(save_path,dict(alpha=alpha,R2=R2,R2_100=R2_100))
+                    # breakpoint()
                 
-                results["eigenspectrum"] = activations_eigen
-                results["alpha"] = alpha
-                results["R2"] = R2
-                results["R2_100"] = R2_100
-                results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
-                results["effective_rank"] = np.sum(activations_eigen) / np.max(np.abs(activations_eigen))
-                results["feature_ambient_dim"] = np.prod(activations.shape[1:])
-                results["rankme"] = rk
-                del activations
-                print("Initial alpha", results["alpha"])
-        else:
-            alpha_arr, R2_arr, R2_100_arr = powerlaw.stringer_get_powerlaw_batch(
-                net=model,
-                layer=model.fc,
-                # data_loader=loaders['test'],trange=np.arange(50,200),
-                data_loader=loaders["train"],
-                trange=np.arange(5, 50),
-                use_cuda=True,
-            )
+                    results["eigenspectrum"] = activations_eigen
+                    results["alpha"] = alpha
+                    results["R2"] = R2
+                    results["R2_100"] = R2_100
+                    results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
+                    results["effective_rank"] = np.sum(activations_eigen) / np.max(np.abs(activations_eigen))
+                    results["feature_ambient_dim"] = np.prod(activations.shape[1:])
+                    results["rankme"] = rk
+                    del activations
+                    print("Initial alpha", results["alpha"])
+            else:
+                alpha_arr, R2_arr, R2_100_arr = powerlaw.stringer_get_powerlaw_batch(
+                    net=model,
+                    layer=model.fc,
+                    # data_loader=loaders['test'],trange=np.arange(50,200),
+                    data_loader=loaders["train"],
+                    trange=np.arange(5, 50),
+                    use_cuda=True,
+                )
 
-            results["alpha_arr"] = alpha_arr
-            results["R2_arr"] = R2_arr
-            results["R2_100_arr"] = R2_100_arr
-            results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
+                results["alpha_arr"] = alpha_arr
+                results["R2_arr"] = R2_arr
+                results["R2_100_arr"] = R2_100_arr
+                results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
 
         if args.track_jacobian: # track input jacobian for linear regression on pretrained features
             jacobian, jacobian_clean, jacobian_corr = input_jacobian(
@@ -1409,6 +1482,7 @@ def run_experiment(args):
         label_noise=training.label_noise,
         extra_augmentations=training.covariance_augmentations if training.track_covariance else 0,
         num_augmentations_test = 2 if eval.ssl_eval else 1,
+        dsize = training.dsize if "imagenet" in training.dataset else 0,
     )
     if training.local_forward:
         assert training.algorithm != "linear", "Error: local forward passes only supported for SSL pretraining"
@@ -1479,12 +1553,23 @@ def run_experiment(args):
         loss_fn = build_loss_fn(training)
         print("CONSTRUCTED LOSS FUNCTION")
         
-        acc_1, acc_5 = ood_eval(
-            model=model,
-            dataloader=loaders["test"],
-            epoch=training.epochs,
-            epochs=training.epochs,
-        )
+        if training.dataset == "imagenet100c":
+            dataloader_list = [ 
+                loaders[f"test-{l}"] for l in range(1, 6)
+            ]
+            acc_1, acc_5 = ood_eval_imagenet(
+                model=model,
+                dataloader_list=dataloader_list,
+                epoch=training.epochs,
+                epochs=training.epochs,
+            )
+        else:
+            acc_1, acc_5 = ood_eval(
+                model=model,
+                dataloader=loaders["test"],
+                epoch=training.epochs,
+                epochs=training.epochs,
+            )
         
         results["test_acc_1"].append(acc_1)
         results["test_acc_5"].append(acc_5)

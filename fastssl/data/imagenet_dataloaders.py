@@ -29,6 +29,7 @@ from fastssl.data.cifar_transforms import (
 )
 
 import numpy as np
+from fastssl.utils.label_correction import with_indices, corrupt_labels
 
 IMG_SIZE = 224
 DEFAULT_CROP_RATIO = 224/256
@@ -439,7 +440,7 @@ def get_ssltrain_imagenet_ffcv_dataloaders(
     return loaders
 
 def get_ssltrain_imagenet_pytorch_dataloaders(
-        data_dir=None, batch_size=None, num_workers=None
+        data_dir=None, batch_size=None, num_workers=None, extra_augmentations=False, dsize=0, num_augmentations=2
 ):
     paths = {
         'train': data_dir + '/train',
@@ -448,34 +449,131 @@ def get_ssltrain_imagenet_pytorch_dataloaders(
     loaders = {}
 
     for name in ['train']:
-        dataset = torchvision.datasets.ImageFolder(paths[name], Transform())
+        transform = Transform() if num_augmentations == 2 else MultiViewTransform(n_augs=num_augmentations)
+        dataset = torchvision.datasets.ImageFolder(paths[name], transform)
+        
+        if dsize > 0:
+            dataset = subsample_dataset(dataset, dsize, train=True)
+        
         loader = torch.utils.data.DataLoader(
             dataset, batch_size=batch_size, num_workers=num_workers,
-            pin_memory=True, shuffle=True, drop_last=True
+            pin_memory=False, shuffle=True, drop_last=True
         )
         loaders[name] = loader
+    
+    if extra_augmentations:
+        for name in ['train_extra']:
+            dataset = torchvision.datasets.ImageFolder(paths['train'], MultiViewTransform())
+            if dsize > 0:
+                dataset = subsample_dataset(dataset, dsize, train=True)
+            
+            loader = torch.utils.data.DataLoader(
+                dataset, batch_size=batch_size, num_workers=num_workers,
+                pin_memory=False, shuffle=True, drop_last=True
+            )
+            loaders[name] = loader
 
     return loaders
 
 
- 
+def subsample_dataset(dataset, samples_per_class, train=False):
+    """ Subsample classes from dataset and return a modified dataset (in-place)
+    """
+    classes_to_keep = dataset.classes
+    class_idx = { c: dataset.class_to_idx[c] for c in classes_to_keep }
+    targets = np.asarray(dataset.targets)
+
+    nsamples = len(targets)
+    samples_per_class_float = samples_per_class
+
+    # select samples to keep according to classes_to_keep and samples_per_class
+    mask_per_class = [ targets == class_idx[c] for c in class_idx ]
+    samples_mask = np.zeros_like(mask_per_class[0])
+    for i, mask in enumerate(mask_per_class):
+        if train and samples_per_class > 0:
+            if int(samples_per_class) == 0:
+                samples_per_class = int(np.round(samples_per_class * len(targets) / len(dataset.classes)))
+            cut_idx = np.where(mask)[0][samples_per_class]
+            mask[cut_idx:] = False
+        mask_per_class[i] = mask
+        samples_mask = np.logical_or(samples_mask, mask)
+
+    sample_idx = np.where(samples_mask)[0]
+
+    targets = targets[sample_idx]
+    dataset.samples = [ dataset.samples[i] for i in sample_idx ]
+    dataset.classes = classes_to_keep
+    dataset.imgs = dataset.samples
+
+    for cid, c in enumerate(class_idx):
+        targets[targets == class_idx[c]] = cid
+        class_idx[c] = cid
+
+    dataset.targets = targets
+    dataset.class_to_idx = class_idx
+
+    nsamples_new = len(targets)
+    print(f"Sampled {nsamples_new} images from a dataset of size {nsamples}. New ratio is {nsamples_new / nsamples}, requested:  {samples_per_class_float}")
+
+    return dataset
+
+
 def get_ssleval_imagenet_pytorch_dataloaders(
-        data_dir=None, batch_size=None, num_workers=None
+        data_dir=None, batch_size=None, num_workers=None, label_noise=0, ood_eval=False, dsize=0, num_augmentations_test=1
 ):
     paths = {
         'train': data_dir + '/train',
-        'test': data_dir + '/val',
     }
 
+    if ood_eval:
+        train_dir = "/".join(data_dir.split("/")[:-1]) # removing noise_type
+        train_dir = "-".join(train_dir.split("-")[:-1]) # removing "-c" suffix from dataset
+        paths['train'] = train_dir + '/train'
+        assert label_noise == 0, "Error: choose either ood_eval=True or label_noise > 0"
+        paths.update(
+            { f'test-{l}': data_dir + f'/{l}' for l in range(1, 6) }
+        )
+    else:
+    	paths['test'] = data_dir + '/val'
+
     loaders = {}
-    for name in ['train', 'test']:
-        dataset = torchvision.datasets.ImageFolder(paths[name], EvalTransform())
+    for name in paths.keys():
+        dset_cls = torchvision.datasets.ImageFolder
+        if name == 'train' and label_noise > 0:
+            dset_cls = with_indices(dset_cls)
+
+        if num_augmentations_test > 1:
+            dataset = dset_cls(paths[name], Transform())
+        else:
+            dataset = dset_cls(paths[name], EvalTransform())
+        
+        if name == "train" and dsize > 0:
+            dataset = subsample_dataset(dataset, dsize, train=True)
+        
+        if name == 'train' and label_noise > 0:
+            assert not ood_eval, "Error: choose either ood_eval=True or label_noise > 0"
+            try:
+                targets = dataset.targets
+            except AttributeError:
+                targets = dataset.labels
+            targets_orig = targets.copy()
+            new_targets = corrupt_labels(
+                targets=targets,
+                label_noise=label_noise
+            )
+            dataset.samples = [ (s[0], t) for (s, t) in zip(dataset.samples, new_targets) ]
+            try:
+                _ = dataset.targets
+                dataset.targets = new_targets
+            except AttributeError:
+                dataset.labels = new_targets
+
+            dataset._targets_orig = targets_orig
         loader = torch.utils.data.DataLoader(
             dataset, batch_size=batch_size, num_workers=num_workers,
-            pin_memory=True, shuffle=False, drop_last=True
+            pin_memory=False, shuffle=False, drop_last=True
         )
         loaders[name] = loader
-
     return loaders
 
 
@@ -540,9 +638,22 @@ class Transform:
         y2 = self.transform_prime(x)
         return y1, y2
 
+
+class MultiViewTransform(Transform):
+    def __init__(self, n_augs: int = 5):
+        super(MultiViewTransform, self).__init__()
+        self.n_augs = n_augs
+
+    def __call__(self, x):
+        y1 = self.transform(x)
+        output = (y1, ) + tuple(self.transform_prime(x) for _ in range(self.n_augs -1))
+        return output 
+
+
 class EvalTransform:
     def __init__(self):
         self.transform = transforms.Compose([
+            transforms.Resize((224, 224), interpolation=Image.BICUBIC),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                 std=[0.229, 0.224, 0.225])
