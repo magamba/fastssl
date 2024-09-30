@@ -19,7 +19,7 @@ write_dataset = True
 noise_level = 0
 subsample_classes = False # if enabled, generates a reduced version of the dataset, with only a few classes sampled
 unseen_classes = False # if true, sample classes from a secondary list
-samples_per_class = 0 # 0.2 0.4 0.6 0.8, set to 0 to include all samples
+samples_per_class = 0 # 0.2 0.4 0.6 0.8, 0.002, 0.004, 0.00768, 0.01, 0.02, 0.04096 set to 0 to include all samples
 
 noise_type = ""
 ood_noise_types = [
@@ -48,7 +48,11 @@ if unseen_classes:
     assert subsample_classes, "Error: subsample_classes must be True when unseen_classes is True"
 
 # dataset = 'cifar10c'
-dataset = 'cifar10'
+# dataset = 'cifar10'
+
+# dataset = 'cifar100c'
+dataset = 'cifar100'
+
 #if dataset=='cifar10':
 #	dataset_folder = '/network/datasets/cifar10.var/cifar10_torchvision/'
 #	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar10'
@@ -71,7 +75,13 @@ if dataset_folder is None:
     raise RuntimeError("Please run scripts/setup_env first")
 ffcv_folder = dataset_folder
 
-folder_name = str(dataset) if noise_type == "" else "cifar10-c"
+if noise_type == "":
+    folder_name = str(dataset)
+elif dataset == "cifar10c":
+    folder_name = "cifar10-c"
+elif dataset == "cifar100c":
+    folder_name = "cifar100-c"
+
 if unseen_classes:
     folder_name += "-unseen_2"
 elif subsample_classes:
@@ -86,8 +96,8 @@ if noise_level>0:
 if subsample_classes or noise_level > 0 or noise_type != "" or samples_per_class > 0:
     ffcv_folder = os.path.join(ffcv_folder, folder_name)
 
-if dataset == "cifar10c":
-    assert noise_level == 0, "Error only test set available for CIFAR10-C"
+if dataset in ["cifar10c", "cifar100c"]:
+    assert noise_level == 0, f"Error only test set available for {dataset}"
     ffcv_folder = os.path.join(ffcv_folder, noise_type)
 
 def with_indices(datasetclass):
@@ -212,7 +222,11 @@ if dataset=='cifar10c':
     testset = CIFAR10C(
         root=os.path.join(dataset_folder, folder_name), noise_type=noise_type, transform=None
     )
-
+elif dataset=='cifar100c':
+    trainset = None
+    testset = CIFAR10C(
+        root=os.path.join(dataset_folder, folder_name), noise_type=noise_type, transform=None
+    )
 elif dataset=='stl10':
     STL10 = torchvision.datasets.STL10
     if noise_level > 0:
@@ -228,7 +242,7 @@ elif dataset=='stl10':
     testset = torchvision.datasets.STL10(
         root=dataset_folder, split='test', download=False, transform=None)
 
-dataset_str = f"{dataset}_" if noise_level == 0 and not subsample_classes and not samples_per_class and dataset != "cifar10c" else ""
+dataset_str = f"{dataset}_" if (noise_level == 0) and (not subsample_classes) and (not samples_per_class) and (dataset != "cifar10c") and (dataset != "cifar100c") else ""
 train_beton_fpath = os.path.join(ffcv_folder, dataset_str + "train.beton")
 test_beton_fpath = os.path.join(ffcv_folder, dataset_str + "test.beton")
 
@@ -236,9 +250,9 @@ test_beton_fpath = os.path.join(ffcv_folder, dataset_str + "test.beton")
 if write_dataset:
     datasets = {'train': trainset, 'test':testset}
     for name,ds in datasets.items():
-        if dataset == "cifar10c" and name == "train": continue
+        if dataset in ["cifar10c", "cifar100c"] and name == "train": continue
         #breakpoint()
-        if dataset == "cifar10":
+        if dataset in ["cifar10", "cifar100"]:
             if subsample_classes:
                 ds = subsample_dataset(ds, classes_to_keep, samples_per_class, train= name == "train")
             elif samples_per_class > 0 and name == "train":
@@ -285,7 +299,7 @@ if write_dataset:
 BATCH_SIZE = 500
 loaders = {}
 for name in ["train", "test"]:
-    if name == "train" and dataset == "cifar10c": continue
+    if name == "train" and dataset in ["cifar10c", "cifar100c"]: continue
     label_pipeline: List[Operation] = [
         IntDecoder(),
         ToTensor(),
@@ -308,7 +322,7 @@ for name in ["train", "test"]:
         pipelines.update({'ground_truth': label_pipeline, 'sample_idx': label_pipeline})
 
     loaders[name] = Loader(
-        os.path.join(ffcv_folder, "{}.beton".format(name)),
+        os.path.join(ffcv_folder, "{}{}.beton".format(dataset_str,name)),
         batch_size=BATCH_SIZE,
         num_workers=1,
         order=OrderOption.SEQUENTIAL,
@@ -341,7 +355,16 @@ elif dataset=='cifar100':
         root=dataset_folder, train=True, download=False, transform=transform_test)
     testset = torchvision.datasets.CIFAR100(
         root=dataset_folder, train=False, download=False, transform=transform_test)
+    if subsample_classes:
+        trainset = subsample_dataset(trainset, classes_to_keep, samples_per_class, train=True)
+        testset = subsample_dataset(testset, classes_to_keep, samples_per_class)
+    elif samples_per_class > 0:
+        trainset = subsample_dataset(trainset, classes_to_keep, samples_per_class, train=True)
 elif dataset=='cifar10c':
+    skip_train = True
+    testset = CIFAR10C(
+        root=os.path.join(dataset_folder, folder_name), noise_type=noise_type, transform=transform_test)
+elif dataset=='cifar100c':
     skip_train = True
     testset = CIFAR10C(
         root=os.path.join(dataset_folder, folder_name), noise_type=noise_type, transform=transform_test)
@@ -473,6 +496,25 @@ if noise_level > 0:
 # echo "Sed string: $sed_string"; \
 # sed -i "$sed_string" write_ffcv_datasets.py; \
 # unset oldnoise sed_string n;
+#
+### ===============================================================================
+# Usage:
+#   1. set dataset manually
+#   2. Automate subsampled dataset creation via the following bash script
+#
+# oldsamples=0; \
+# for n in "0\.2" "0\.4" "0\.6" "0\.8", "0\.002", "0\.004", "0\.00768", "0\.01", "0\.02", "0\.04096"; do \
+#     echo "Nsamples: $n"; \
+#     sed_string="0,/samples_per_class = $oldsamples""/{s/samples_per_class = $oldsamples""/samples_per_class = $n/}"; \
+#     echo "Sed string: $sed_string"; \
+#     sed -i "$sed_string" write_ffcv_datasets.py; \
+#     oldsamples=$n; \
+#     python write_ffcv_datasets.py; \
+# done; \
+# sed_string="0,/samples_per_class = $oldsamples""/{s/samples_per_class = $oldsamples""/samples_per_class = 0/}"; \
+# echo "Sed string: $sed_string"; \
+# sed -i "$sed_string" write_ffcv_datasets.py; \
+# unset oldsamples sed_string n;
 #
 ### ===============================================================================
 # STL10 stats
