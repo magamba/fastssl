@@ -483,6 +483,9 @@ def subsample_dataset(dataset, samples_per_class, train=False):
     class_idx = { c: dataset.class_to_idx[c] for c in classes_to_keep }
     targets = np.asarray(dataset.targets)
 
+    nsamples = len(targets)
+    samples_per_class_float = samples_per_class
+
     # select samples to keep according to classes_to_keep and samples_per_class
     mask_per_class = [ targets == class_idx[c] for c in class_idx ]
     samples_mask = np.zeros_like(mask_per_class[0])
@@ -498,8 +501,9 @@ def subsample_dataset(dataset, samples_per_class, train=False):
     sample_idx = np.where(samples_mask)[0]
 
     targets = targets[sample_idx]
-    dataset.data = dataset.data[sample_idx]
+    dataset.samples = [ dataset.samples[i] for i in sample_idx ]
     dataset.classes = classes_to_keep
+    dataset.imgs = dataset.samples
 
     for cid, c in enumerate(class_idx):
         targets[targets == class_idx[c]] = cid
@@ -507,6 +511,9 @@ def subsample_dataset(dataset, samples_per_class, train=False):
 
     dataset.targets = targets
     dataset.class_to_idx = class_idx
+
+    nsamples_new = len(targets)
+    print(f"Sampled {nsamples_new} images from a dataset of size {nsamples}. New ratio is {nsamples_new / nsamples}, requested:  {samples_per_class_float}")
 
     return dataset
 
@@ -566,8 +573,7 @@ def get_ssleval_imagenet_pytorch_dataloaders(
             dataset, batch_size=batch_size, num_workers=num_workers,
             pin_memory=False, shuffle=False, drop_last=True
         )
-	    loaders[name] = loader
-	
+        loaders[name] = loader
     return loaders
 
 
@@ -647,6 +653,7 @@ class MultiViewTransform(Transform):
 class EvalTransform:
     def __init__(self):
         self.transform = transforms.Compose([
+            transforms.Resize((224, 224), interpolation=Image.BICUBIC),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                 std=[0.229, 0.224, 0.225])

@@ -109,7 +109,7 @@ Section("training", "Fast CIFAR-10 training").params(
     adaptive_ssl=Param(bool, "Use alpha to regularize SSL loss", default=False),
     num_augmentations=Param(int, "Number of augmentations to use per image", default=2),
     train_backbone=Param(bool, "Train backbone together with linear probe", default=False),
-    dsize=Param(int, "Subsample dataset down to total size DSIZE expressed as a ratio in [0,1)", default=0),
+    dsize=Param(float, "Subsample dataset down to total size DSIZE expressed as a ratio in [0,1)", default=0),
 )
 
 Section("eval", "Fast CIFAR-10 evaluation").params(
@@ -246,7 +246,7 @@ def build_dataloaders(
                  default_linear_bsz,
                  num_workers,
                  label_noise=label_noise,
-                 ood_eval= dataset in ["imagenet100c", "imagenetc"]
+                 ood_eval= dataset in ["imagenet100c", "imagenetc"],
                  dsize=dsize,
              )
     else:
@@ -472,7 +472,7 @@ def build_model(args=None):
         missing_keys, unexpected_keys = model.load_state_dict(
             torch.load(ckpt_path, map_location="cpu")["model"], strict=strict_loading,
         )
-	    if len(unexpected_keys) > 0:
+        if len(unexpected_keys) > 0:
             assert torch.all(torch.as_tensor(['proj' in str(k) for k in unexpected_keys], dtype=torch.bool)), f"Error: unexpected model keys: {unexpected_keys}"
         if len(missing_keys) > 0:
             assert torch.all(torch.as_tensor(['fc' in str(k) for k in missing_keys], dtype=torch.bool)), f"Error: can only load linear probe checkpoints, but the following keys are missing: {missing_keys}"
@@ -517,11 +517,12 @@ def build_loss_fn(args=None):
             y = inp.pop(1)
             num_augs = len(inp)
             # x, y = inp
-            for x in inp:
-                x = x.cuda(non_blocking=True)
+            #for x in inp:
+            #    x = x.cuda(non_blocking=True)
+            inp = [x.cuda(non_blocking=True) for x in inp]
             y = y.cuda(non_blocking=True)
             # x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True)
-            logits = model(x)
+            logits = model(inp[-1])
             #return CrossEntropyLoss(label_smoothing=0.1)(logits, y)
             return CrossEntropyLoss()(logits, y)
 
@@ -713,13 +714,14 @@ def eval_step(model, dataloader, epoch=None, epochs=None):
         inp = list(inp)
         # WARNING: every epoch could have different augmentations of images
         target = inp.pop(1)
-        for x in inp:
-            x = x.cuda(non_blocking=True)
-        target = target.cuda(non_blocking=True)
-        total_samples += inp[0].shape[0]
-        # total_samples += data.shape[0]
-        # data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
         with autocast(device_type="cuda"):
+            #for x in inp:
+            #    x = x.cuda(non_blocking=True)
+            inp = [x.cuda(non_blocking=True) for x in inp]
+            target = target.cuda(non_blocking=True)
+            total_samples += inp[0].shape[0]
+            # total_samples += data.shape[0]
+            # data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
             logits = model(inp)
             preds = torch.argsort(logits, dim=1, descending=True)
             total_correct_1 += torch.sum(
@@ -757,8 +759,9 @@ def ood_eval(model, dataloader, epoch=None, epochs=None):
         inp = list(inp)
         # WARNING: every epoch could have different augmentations of images
         target = inp.pop(1)
-        for x in inp:
-            x = x.cuda(non_blocking=True)
+        #for x in inp:
+        #    x = x.cuda(non_blocking=True)
+        inp = [x.cuda(non_blocking=True) for x in inp]
         target = target.cuda(non_blocking=True)
         total_samples += inp[0].shape[0]
         # total_samples += data.shape[0]
@@ -814,7 +817,7 @@ def ood_eval_imagenet(model, dataloader_list, epoch=None, epochs=None):
             total_samples += inp[0].shape[0]
             # total_samples += data.shape[0]
             # data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
-            with autocast():
+            with autocast(device_type="cuda"):
                 logits = model(inp)
                 preds = torch.argsort(logits, dim=1, descending=True)
                 total_correct_1[l] += torch.sum(
@@ -991,10 +994,11 @@ def precache_outputs(model, loaders, args, eval_args):
             sample_idx = inp.pop(1) # sample_id
             noise_ratio += torch.ne(target, ground_truth).sum().float().item()
             num_samples += target.shape[0]
-        for x in inp:
-            x = x.cuda(non_blocking=True)
-        # data = data.cuda(non_blocking=True)
         with autocast(device_type="cuda"):
+            #for x in inp:
+            #    x = x.cuda(non_blocking=True)
+            inp = [x.cuda(non_blocking=True) for x in inp]
+            # data = data.cuda(non_blocking=True)
             with torch.no_grad():
                 out_augs = [model(x) for x in inp]
                 # mean of features across different augmentations of each image
@@ -1021,10 +1025,11 @@ def precache_outputs(model, loaders, args, eval_args):
         inp = list(inp)
         # WARNING: every epoch could have different augmentations of images
         target = inp.pop(1)
-        for x in inp:
-            x = x.cuda(non_blocking=True)
-        # data = data.cuda(non_blocking=True)
         with autocast(device_type="cuda"):
+            #for x in inp:
+            #    x = x.cuda(non_blocking=True)
+            inp = [x.cuda(non_blocking=True) for x in inp]
+            # data = data.cuda(non_blocking=True)
             with torch.no_grad():
                 out_augs = [model(x) for x in inp]
                 # mean of features across different augmentations of each image
@@ -1104,52 +1109,53 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
         )
 
     if args.algorithm == "linear":
-        if args.use_autocast:
-            activations = powerlaw.generate_activations_prelayer_torch(
-                net=model,
-                layer=model.fc,
-                data_loader=loaders["train"],
-                use_cuda=True,
-            )
-            activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
-            with autocast(device_type="cuda"):
-                try:
-                    tmin, tmax = 3, min(50, activations.shape[1])
-                    alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
-                        activations_eigen, trange=np.arange(tmin, tmax)
-                    )
-                    rk = powerlaw.rankme(activations_eigen)
-                except:
-                    alpha, R2, R2_100, rk = np.nan, np.nan, np.nan, np.nan
-                # debug_plot(activations_eigen,alpha,ypred,R2,R2_100,'test_full_early_{:.4f}.png'.format(args.lambd))
-                # save_path = gen_ckpt_path(args, args.algorithm, args.epochs, 'results_{}_full_early_alpha'.format(args.dataset), 'npy')
-                # np.save(save_path,dict(alpha=alpha,R2=R2,R2_100=R2_100))
-                # breakpoint()
+        if args.track_alpha:
+            if args.use_autocast:
+                activations = powerlaw.generate_activations_prelayer_torch(
+                    net=model,
+                    layer=model.fc,
+                    data_loader=loaders["train"],
+                    use_cuda=True,
+                )
+                activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
+                with autocast(device_type="cuda"):
+                    try:
+                        tmin, tmax = 3, min(50, activations.shape[1])
+                        alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
+                            activations_eigen, trange=np.arange(tmin, tmax)
+                        )
+                        rk = powerlaw.rankme(activations_eigen)
+                    except:
+                        alpha, R2, R2_100, rk = np.nan, np.nan, np.nan, np.nan
+                    # debug_plot(activations_eigen,alpha,ypred,R2,R2_100,'test_full_early_{:.4f}.png'.format(args.lambd))
+                    # save_path = gen_ckpt_path(args, args.algorithm, args.epochs, 'results_{}_full_early_alpha'.format(args.dataset), 'npy')
+                    # np.save(save_path,dict(alpha=alpha,R2=R2,R2_100=R2_100))
+                    # breakpoint()
                 
-                results["eigenspectrum"] = activations_eigen
-                results["alpha"] = alpha
-                results["R2"] = R2
-                results["R2_100"] = R2_100
-                results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
-                results["effective_rank"] = np.sum(activations_eigen) / np.max(np.abs(activations_eigen))
-                results["feature_ambient_dim"] = np.prod(activations.shape[1:])
-                results["rankme"] = rk
-                del activations
-                print("Initial alpha", results["alpha"])
-        else:
-            alpha_arr, R2_arr, R2_100_arr = powerlaw.stringer_get_powerlaw_batch(
-                net=model,
-                layer=model.fc,
-                # data_loader=loaders['test'],trange=np.arange(50,200),
-                data_loader=loaders["train"],
-                trange=np.arange(5, 50),
-                use_cuda=True,
-            )
+                    results["eigenspectrum"] = activations_eigen
+                    results["alpha"] = alpha
+                    results["R2"] = R2
+                    results["R2_100"] = R2_100
+                    results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
+                    results["effective_rank"] = np.sum(activations_eigen) / np.max(np.abs(activations_eigen))
+                    results["feature_ambient_dim"] = np.prod(activations.shape[1:])
+                    results["rankme"] = rk
+                    del activations
+                    print("Initial alpha", results["alpha"])
+            else:
+                alpha_arr, R2_arr, R2_100_arr = powerlaw.stringer_get_powerlaw_batch(
+                    net=model,
+                    layer=model.fc,
+                    # data_loader=loaders['test'],trange=np.arange(50,200),
+                    data_loader=loaders["train"],
+                    trange=np.arange(5, 50),
+                    use_cuda=True,
+                )
 
-            results["alpha_arr"] = alpha_arr
-            results["R2_arr"] = R2_arr
-            results["R2_100_arr"] = R2_100_arr
-            results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
+                results["alpha_arr"] = alpha_arr
+                results["R2_arr"] = R2_arr
+                results["R2_100_arr"] = R2_100_arr
+                results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
 
         if args.track_jacobian: # track input jacobian for linear regression on pretrained features
             jacobian, jacobian_clean, jacobian_corr = input_jacobian(
@@ -1476,6 +1482,7 @@ def run_experiment(args):
         label_noise=training.label_noise,
         extra_augmentations=training.covariance_augmentations if training.track_covariance else 0,
         num_augmentations_test = 2 if eval.ssl_eval else 1,
+        dsize = training.dsize if "imagenet" in training.dataset else 0,
     )
     if training.local_forward:
         assert training.algorithm != "linear", "Error: local forward passes only supported for SSL pretraining"
