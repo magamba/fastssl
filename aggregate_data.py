@@ -1483,7 +1483,7 @@ def aggregate_fig8(destdir=plots_path):
                                                 ).tolist()
                                                 epoch = figure8_conf["epochs"][algorithm]
                                                 logger.info(f"Parsing {base_model}_{width} {augs} augs nsamples {nsamples} pdepth {pdepth} hparam {hparam} epoch {epoch} {metric} seed {s_id}")
-                                                plot_data[algorithm][dataset][base_model][a_id, n_id, d_id, w_id, h_id, m_id, s_id] = parse_stats(fname, stats, metric, epoch)
+                                                plot_data[algorithm][dataset][base_model][a_id, n_id, d_id, w_id, h_id, met_id, s_id] = parse_stats(fname, stats, metric, epoch)
                                                     
                                             except FileNotFoundError:
                                                 logger.info(f"File not found: {fname}")
