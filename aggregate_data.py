@@ -1514,6 +1514,7 @@ def aggregate_fig8(destdir=plots_path):
                 performance_data[algorithm][dataset][base_model] = np.zeros((naugs, nnoise, nnsamples, npdepths, nwidths, nhparams, nmetrics, nseeds))
                 for a_id, augs in enumerate(figure8_conf["augs"][algorithm]):
                     for n_id, noise in enumerate(figure8_conf["noise_configs"]):
+                        if n_id > 0: continue
                         for ns_id, nsamples in enumerate(figure8_conf["nsamples"]):
                             for p_id, pdepth in enumerate(figure8_conf["projection_depths"]):
                                 for w_id, width in enumerate(figure8_conf["widths"][base_model][dataset]):
@@ -1528,7 +1529,6 @@ def aggregate_fig8(destdir=plots_path):
                                                 ).tolist()
                                                 for m_id, metric in enumerate(figure8_conf["performance_metrics"]):
                                                     if noise == 0 and metric in ["train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored"]: continue
-                                                    else: continue
                                                     logger.info(f"Parsing {base_model}_{width} {augs} augs nsamples {nsamples} epoch {epoch} {metric} seed {s_id}")
                                                     performance_data[algorithm][dataset][base_model][a_id, n_id, ns_id, p_id, w_id, h_id, m_id, s_id] = parse_stats(
                                                         fname, stats, metric, epoch
@@ -1654,10 +1654,10 @@ figure9_conf = {
     },
     "widths": {
         "resnet18": {
-            "cifar10": list(range(8,65,4)),
+            "cifar100": list(range(8,65,4)),
         },
         "vit": {
-            "cifar10": list(range(8,65,4)),
+            "cifar100": list(range(8,65,4)),
         },
     },
     "projection_depths": [2],
@@ -1755,7 +1755,7 @@ figure9_conf.update({
                         nsamples: {
                             pdepth: {
                                 width: {
-                                    hparam: [ f"{root_dir}_barlow_twins_robustness_inverse_scaling-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}_ssl_covariance_ssl_100_seed_{seed}.npy"  for model_str in figure9_conf["model_strings"][model] for base_width in figure9_conf["expansion"][model] for nsample_str in figure9_conf["nsamples_strings"][nsamples] for seed in figure9_conf["seeds"]
+                                    hparam: [ f"{root_dir}_barlow_twins_robustness_inverse_scaling-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}c_ssl_covariance_ssl_100_seed_{seed}.npy"  for model_str in figure9_conf["model_strings"][model] for base_width in figure9_conf["expansion"][model] for nsample_str in figure9_conf["nsamples_strings"][nsamples] for seed in figure9_conf["seeds"]
                                     ] for hparam in figure9_conf["hyperparams"]["barlow_twins"][width]
                                 } for width in figure9_conf["widths"][model][dataset]
                             } for pdepth in figure9_conf["projection_depths"]
@@ -1771,7 +1771,7 @@ figure9_conf.update({
                         nsamples: {
                             pdepth: {
                                 width: {
-                                    hparam: [ f"{root_dir}_simclr_robustness_no_compile-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_{bsz}_lr_0.001_wd_1e-05/results_{dataset}_ssl_covariance_SimCLR_100_seed_{seed}.npy"  for model_str in figure9_conf["model_strings"][model] for base_width in figure9_conf["expansion"][model] for nsample_str in figure9_conf["nsamples_strings"][nsamples] for bsz in figure9_conf["batch_sizes"][nsamples] for seed in figure9_conf["seeds"]
+                                    hparam: [ f"{root_dir}_simclr_robustness_no_compile-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_{bsz}_lr_0.001_wd_1e-05/results_{dataset}c_ssl_covariance_SimCLR_100_seed_{seed}.npy"  for model_str in figure9_conf["model_strings"][model] for base_width in figure9_conf["expansion"][model] for nsample_str in figure9_conf["nsamples_strings"][nsamples] for bsz in figure9_conf["batch_sizes"][nsamples] for seed in figure9_conf["seeds"]
                                     ] for hparam in figure9_conf["hyperparams"]["simclr"][width]
                                 } for width in figure9_conf["widths"][model][dataset]
                             } for pdepth in figure9_conf["projection_depths"]
@@ -1789,7 +1789,7 @@ figure9_conf.update({
                         nsamples: {
                             pdepth: {
                                 width: {
-                                    hparam: [ f"{root_dir}_barlow_twins_robustness_inverse_scaling-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}_ssl_eval_ssl_100_seed_{seed}.npy"  for model_str in figure9_conf["model_strings"][model] for base_width in figure9_conf["expansion"][model] for nsample_str in figure9_conf["nsamples_strings"][nsamples] for seed in figure9_conf["seeds"]
+                                    hparam: [ f"{root_dir}_barlow_twins_robustness_inverse_scaling-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}c_ssl_eval_ssl_100_seed_{seed}.npy"  for model_str in figure9_conf["model_strings"][model] for base_width in figure9_conf["expansion"][model] for nsample_str in figure9_conf["nsamples_strings"][nsamples] for seed in figure9_conf["seeds"]
                                     ] for hparam in figure9_conf["hyperparams"]["barlow_twins"][width]
                                 } for width in figure9_conf["widths"][model][dataset]
                             } for pdepth in figure9_conf["projection_depths"]
@@ -1805,7 +1805,7 @@ figure9_conf.update({
                         nsamples: {
                             pdepth: {
                                 width: {
-                                    hparam: [ f"{root_dir}_simclr_robustness_no_compile-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_{bsz}_lr_0.001_wd_1e-05/results_{dataset}_ssl_eval_SimCLR_100_seed_{seed}.npy"  for model_str in figure9_conf["model_strings"][model] for base_width in figure9_conf["expansion"][model] for nsample_str in figure9_conf["nsamples_strings"][nsamples] for bsz in figure9_conf["batch_sizes"][nsamples] for seed in figure9_conf["seeds"]
+                                    hparam: [ f"{root_dir}_simclr_robustness_no_compile-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_{bsz}_lr_0.001_wd_1e-05/results_{dataset}c_ssl_eval_SimCLR_100_seed_{seed}.npy"  for model_str in figure9_conf["model_strings"][model] for base_width in figure9_conf["expansion"][model] for nsample_str in figure9_conf["nsamples_strings"][nsamples] for bsz in figure9_conf["batch_sizes"][nsamples] for seed in figure9_conf["seeds"]
                                     ] for hparam in figure9_conf["hyperparams"]["simclr"][width]
                                 } for width in figure9_conf["widths"][model][dataset]
                             } for pdepth in figure9_conf["projection_depths"]
@@ -1909,8 +1909,8 @@ figure9_conf.update({
                             pdepth: {
                                 width: {
                                     hparam: {
-                                        0: [ f"{root_dir}_barlow_twins_robustness_inverse_scaling-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}_ssl_eval_ssl_100_seed_{seed}.npy" for model_str in figure9_conf["model_strings"][model] for base_width in figure9_conf["expansion"][model] for nsample_str in figure9_conf["nsamples_strings"][nsamples] for seed in figure9_conf["seeds"] ],
-                                        **{noise: [ f"{root_dir}_barlow_twins_robustness_inverse_scaling-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}_{noise}_ssl_eval_ssl_100_seed_{seed}.npy" for model_str in figure9_conf["model_strings"][model] for base_width in figure9_conf["expansion"][model] for nsample_str in figure9_conf["nsamples_strings"][nsamples] for seed in figure9_conf["seeds"] ] for noise in figure9_conf["ood_noise_types"] }
+                                        0: [ f"{root_dir}_barlow_twins_robustness_inverse_scaling-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}c_ssl_eval_ssl_100_seed_{seed}.npy" for model_str in figure9_conf["model_strings"][model] for base_width in figure9_conf["expansion"][model] for nsample_str in figure9_conf["nsamples_strings"][nsamples] for seed in figure9_conf["seeds"] ],
+                                        **{noise: [ f"{root_dir}_barlow_twins_robustness_inverse_scaling-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}c_{noise}_ssl_eval_ssl_100_seed_{seed}.npy" for model_str in figure9_conf["model_strings"][model] for base_width in figure9_conf["expansion"][model] for nsample_str in figure9_conf["nsamples_strings"][nsamples] for seed in figure9_conf["seeds"] ] for noise in figure9_conf["ood_noise_types"] }
                                     } for hparam in figure9_conf["hyperparams"]["barlow_twins"][width]
                                 } for width in figure9_conf["widths"][model][dataset]
                             } for pdepth in figure9_conf["projection_depths"]
@@ -1927,8 +1927,8 @@ figure9_conf.update({
                             pdepth: {
                                 width: {
                                     hparam: {
-                                        0: [ f"{root_dir}_simclr_robustness_no_compile-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_{bsz}_lr_0.001_wd_1e-05/results_{dataset}_ssl_eval_SimCLR_100_seed_{seed}.npy" for model_str in figure9_conf["model_strings"][model] for base_width in figure9_conf["expansion"][model] for nsample_str in figure9_conf["nsamples_strings"][nsamples] for bsz in figure9_conf["batch_sizes"][nsamples] for seed in figure9_conf["seeds"] ],
-                                        **{noise: [ f"{root_dir}_simclr_robustness_no_compile-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_{bsz}_lr_0.001_wd_1e-05/results_{dataset}_{noise}_ssl_eval_SimCLR_100_seed_{seed}.npy" for model_str in figure9_conf["model_strings"][model] for base_width in figure9_conf["expansion"][model] for nsample_str in figure9_conf["nsamples_strings"][nsamples] for bsz in figure9_conf["batch_sizes"][nsamples] for seed in figure9_conf["seeds"] ] for noise in figure9_conf["ood_noise_types"] }
+                                        0: [ f"{root_dir}_simclr_robustness_no_compile-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_{bsz}_lr_0.001_wd_1e-05/results_{dataset}c_ssl_eval_SimCLR_100_seed_{seed}.npy" for model_str in figure9_conf["model_strings"][model] for base_width in figure9_conf["expansion"][model] for nsample_str in figure9_conf["nsamples_strings"][nsamples] for bsz in figure9_conf["batch_sizes"][nsamples] for seed in figure9_conf["seeds"] ],
+                                        **{noise: [ f"{root_dir}_simclr_robustness_no_compile-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_{bsz}_lr_0.001_wd_1e-05/results_{dataset}c_{noise}_ssl_eval_SimCLR_100_seed_{seed}.npy" for model_str in figure9_conf["model_strings"][model] for base_width in figure9_conf["expansion"][model] for nsample_str in figure9_conf["nsamples_strings"][nsamples] for bsz in figure9_conf["batch_sizes"][nsamples] for seed in figure9_conf["seeds"] ] for noise in figure9_conf["ood_noise_types"] }
                                     } for hparam in figure9_conf["hyperparams"]["simclr"][width]
                                 } for width in figure9_conf["widths"][model][dataset]
                             } for pdepth in figure9_conf["projection_depths"]
@@ -1954,7 +1954,8 @@ def aggregate_fig9(destdir=plots_path):
         "intra_manifold_eigen", "inter_manifold_eigen", "intra_manifold_gen_eigen", "inter_manifold_gen_eigen"
     ]
     ssl_eval_metrics = ["test_loss"]
-    
+    ignore_metrics = ["test_loss", "alpha", "feature_input_jacobian", "rankme"]
+
     figure9_data = figure9_conf
 
     plot_data = {}
@@ -1984,7 +1985,7 @@ def aggregate_fig9(destdir=plots_path):
                                             ).tolist()
                                             metric_ids = []
                                             for m_id, metric in enumerate(figure9_conf["metrics"]):
-                                                if algorithm == "barlow_twins" and metric in ["alpha", "feature_input_jacobian"]: continue
+                                                if algorithm == "barlow_twins" and metric in ignore_metrics: continue
                                                 if metric in covariance_metrics or metric in ssl_eval_metrics:
                                                     metric_ids.append((m_id, metric))
                                                     continue
@@ -2033,6 +2034,7 @@ def aggregate_fig9(destdir=plots_path):
                 performance_data[algorithm][dataset][base_model] = np.zeros((naugs, nnoise, nnsamples, npdepths, nwidths, nhparams, nmetrics, nseeds))
                 for a_id, augs in enumerate(figure9_conf["augs"][algorithm]):
                     for n_id, noise in enumerate(figure9_conf["noise_configs"]):
+                        if n_id > 0: continue
                         for ns_id, nsamples in enumerate(figure9_conf["nsamples"]):
                             for p_id, pdepth in enumerate(figure9_conf["projection_depths"]):
                                 for w_id, width in enumerate(figure9_conf["widths"][base_model][dataset]):
@@ -2048,7 +2050,6 @@ def aggregate_fig9(destdir=plots_path):
                                                 ).tolist()
                                                 for m_id, metric in enumerate(figure9_conf["performance_metrics"]):
                                                     if noise == 0 and metric in ["train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored"]: continue
-                                                    else: continue
                                                     logger.info(f"Parsing {base_model}_{width} {augs} augs nsamples {nsamples} epoch {epoch} {metric} seed {s_id}")
                                                     performance_data[algorithm][dataset][base_model][a_id, n_id, ns_id, p_id, w_id, h_id, m_id, s_id] = parse_stats(
                                                         fname, stats, metric, epoch
@@ -2194,7 +2195,7 @@ def aggregate_stats(fig_id):
         destdir = os.path.join(plots_path, 'figure9')
         if not os.path.exists(destdir):
             os.makedirs(destdir)
-        aggregate_fig8(destdir)
+        aggregate_fig9(destdir)
     else:
         raise ValueError(f"Invalid figure id {fig_id}")
 
@@ -2229,7 +2230,7 @@ def main():
     global logger
     logger = logging.getLogger()
 
-    for fig_id in [8, 9]:
+    for fig_id in [8]:
         aggregate_stats(fig_id)
 
 
