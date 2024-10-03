@@ -415,6 +415,7 @@ def input_jacobian(net, layer, data_loader, batch_size=128, max_samples=0, use_c
         jacobian_fn, handle = get_implicit_jacobian_fn(net, layer)
         compute_operator_norm = lambda x: spectral_norm_implicit(x, jacobian_fn=jacobian_fn, num_steps=10)[1]
     
+    avg_norm, avg_norm_clean, avg_norm_corr = 0., 0., 0.
     for i, batch in enumerate(progress_bar):
         
         #if isinstance(batch, (tuple, list)):

@@ -96,7 +96,10 @@ def split_batch_gen(dataloader, num_augmentations=2, mult=2):
     local_size = int((mult * batch_size) / num_augmentations)
     # generator discards labels and augmentations
     for batch in dataloader:
+        # detecting pytorch dataloader
+        if isinstance(batch[0], (tuple, list)):
+            inp_augs = tuple(batch[0][1:]) if len(batch[0]) > 1 else ()
+            batch = (batch[0][0], batch[1]) + inp_augs
         split_batch = zip(*[torch.split(b, local_size) for b in batch])
         for local_batch in split_batch:
             yield local_batch
-    

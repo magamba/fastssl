@@ -371,6 +371,24 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
     return ckpt_path
 
 
+def get_last_checkpoint(args, eval_args):
+    import pathlib
+    ckpt_path = pathlib.Path(
+        gen_ckpt_path(args, eval_args, epoch=args.epochs, suffix='pt')
+    )
+    dirname = ckpt_path.parent
+    fname = ckpt_path.name
+    pathreg = str(fname).replace(f'_{args.epochs}_','_*_')
+    checkpoint_list = list(dirname.glob(pathreg))
+    if len(checkpoint_list) > 0:
+        checkpoints = { int(str(f.name).split('_')[-3]): f for f in checkpoint_list  }
+        ckpt_id = sorted(checkpoints.keys())[-1]
+        last_ckpt = str(checkpoints[ckpt_id])
+    else:
+        last_ckpt = None
+    return last_ckpt
+
+
 def build_model(args=None):
     """
     Returns:
@@ -1108,6 +1126,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             }
         )
 
+    start_epoch = 0
     if args.algorithm == "linear":
         if args.track_alpha:
             if args.use_autocast:
@@ -1175,6 +1194,18 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
         
         if use_wandb:
             log_wandb(results, step=0, skip_keys=['eigenspectrum'])
+    else:
+        # automatically find last epoch and resume
+        last_ckpt = get_last_checkpoint(args, eval_args)
+        if last_ckpt is not None and os.path.exists(last_ckpt):
+            state_dict = torch.load(str(last_ckpt))
+            model.load_state_dict(state_dict["model"])
+            optimizer.load_state_dict(state_dict["optimizer"])
+            if scheduler is not None:
+                scheduler.load_state_dict(state_dict["scheduler"])
+            start_epoch = state_dict["epoch"]
+            model = model.cuda()
+            print(f"Resuming training from epoch {start_epoch} and checkpoint {last_ckpt}")
 
     if args.use_autocast:
         scaler = GradScaler()
@@ -1185,19 +1216,21 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
         target_model = copy.deepcopy(model)
         for param in list(target_model.parameters()):
             param.requires_grad = False
-            
-    print("Saving model checkpoint at initialization")
-    ckpt_path = gen_ckpt_path(args, eval_args, epoch=0, suffix='pt')
-    state = dict(
-        epoch=0,
-        model=model.state_dict(),
-        optimizer=optimizer.state_dict(),
-    )
-    if scheduler is not None:
-        state["scheduler"] = scheduler.state_dict()
-    torch.save(state, ckpt_path)
 
-    for epoch in range(1, args.epochs + 1):
+    if start_epoch == 0:
+        print("Saving model checkpoint at initialization")
+        ckpt_path = gen_ckpt_path(args, eval_args, epoch=0, suffix='pt')
+        state = dict(
+            epoch=0,
+            model=model.state_dict(),
+            optimizer=optimizer.state_dict(),
+        )
+        if scheduler is not None:
+            state["scheduler"] = scheduler.state_dict()
+        torch.save(state, ckpt_path)
+        start_epoch = 1
+
+    for epoch in range(start_epoch, args.epochs + 1):
         if epoch == 1:
             if args.track_alpha:
                 # compute alpha before training starts!
@@ -1226,7 +1259,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 results["rankme"].append((epoch -1, rk))
                 del activations
                 print("Initial alpha", results["alpha"])
-            
+
             if args.track_jacobian and args.jacobian_bigmem:
                 # compute Jacobian before training starts!
                 jacobian, jacobian_clean, jacobian_corr = input_jacobian(
@@ -1258,7 +1291,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
         )
 
         results["train_loss"].append(train_loss)
-        
+
 
         if args.algorithm == "linear":
             acc_1, acc_5 = eval_step(
