@@ -1475,8 +1475,10 @@ def aggregate_fig8(destdir=plots_path):
                                         except FileNotFoundError:
                                             logger.info(f"File not found: {fname}")
                                             missing_runs.append(fname)
-                                            
+                                        
+                                        not_found_metrics = []
                                         for (met_id, metric) in metric_ids:
+                                            if metric in not_found_metrics: continue
                                             file_dict = "ssl_eval_filenames" if metric in ssl_eval_metrics else "covariance_filenames"
                                             fname = figure8_conf[file_dict][algorithm][dataset][base_model][augs][nsamples][pdepth][width][hparam][s_id]
                                             logger.info(f"Loading {fname}")
@@ -1492,6 +1494,10 @@ def aggregate_fig8(destdir=plots_path):
                                             except FileNotFoundError:
                                                 logger.info(f"File not found: {fname}")
                                                 missing_runs.append(fname)
+                                                if metric in covariance_metrics:
+                                                    not_found_metrics += covariance_metrics
+                                                else:
+                                                    not_found_metrics += ssl_eval_metrics
 
                 plot_data[algorithm][dataset][base_model] = \
                     np.nan_to_num(plot_data[algorithm][dataset][base_model]).tolist()
