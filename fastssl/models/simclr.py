@@ -23,8 +23,9 @@ def SimCLRLoss(model, inp, _temperature=0.05):
     inp = list(inp)
     _ = inp.pop(1)
     num_augs = len(inp)
-    for x in inp:
-        x = x.cuda(non_blocking=True)
+    #for x in inp:
+    #    x = x.cuda(non_blocking=True)
+    inp = [x.cuda(non_blocking=True) for x in inp]
     # (x1, x2), _ = inp
     # x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
 

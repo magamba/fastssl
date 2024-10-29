@@ -11,8 +11,9 @@ CONDA_ENV="fastssl-2.4"
 
 #module load Anaconda3/2022.05 CUDA/11.3.1 cuDNN/8.2.1.32-CUDA-11.3.1
 #module load Miniconda3/23.9.0-0 CUDA/11.7.0 cuDNN/8.4.1.50-CUDA-11.7.0
-module load Miniconda3/23.9.0-0 CUDA/12.1.1 cuDNN/8.9.2.26-CUDA-12.1.1
-source "/apps/Common/software/Miniconda3/23.9.0-0/etc/profile.d/conda.sh"
+#module load Miniconda3/23.9.0-0 CUDA/12.1.1 cuDNN/8.9.2.26-CUDA-12.1.1
+module load Miniforge3/24.1.2-0 CUDA/12.1.1 cuDNN/8.9.2.26-CUDA-12.1.1
+source "/apps/Common/software/Miniforge3/24.1.2-0/etc/profile.d/conda.sh"
 
 echo "Setting env on ${SLURMD_NODENAME}"
 nvidia-smi

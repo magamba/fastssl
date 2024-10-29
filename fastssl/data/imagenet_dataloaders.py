@@ -457,7 +457,7 @@ def get_ssltrain_imagenet_pytorch_dataloaders(
         
         loader = torch.utils.data.DataLoader(
             dataset, batch_size=batch_size, num_workers=num_workers,
-            pin_memory=False, shuffle=True, drop_last=True
+            pin_memory=False, shuffle=True, drop_last=False
         )
         loaders[name] = loader
     
@@ -469,7 +469,7 @@ def get_ssltrain_imagenet_pytorch_dataloaders(
             
             loader = torch.utils.data.DataLoader(
                 dataset, batch_size=batch_size, num_workers=num_workers,
-                pin_memory=False, shuffle=True, drop_last=True
+                pin_memory=False, shuffle=True, drop_last=False
             )
             loaders[name] = loader
 
@@ -493,8 +493,12 @@ def subsample_dataset(dataset, samples_per_class, train=False):
         if train and samples_per_class > 0:
             if int(samples_per_class) == 0:
                 samples_per_class = int(np.round(samples_per_class * len(targets) / len(dataset.classes)))
-            cut_idx = np.where(mask)[0][samples_per_class]
-            mask[cut_idx:] = False
+            try:
+                cut_idx = np.where(mask)[0][samples_per_class]
+                mask[cut_idx:] = False
+            except IndexError:
+                print(f"Warning: class {classes_to_keep[i]} has fewer than {samples_per_class} samples")
+                pass
         mask_per_class[i] = mask
         samples_mask = np.logical_or(samples_mask, mask)
 
@@ -571,7 +575,7 @@ def get_ssleval_imagenet_pytorch_dataloaders(
             dataset._targets_orig = targets_orig
         loader = torch.utils.data.DataLoader(
             dataset, batch_size=batch_size, num_workers=num_workers,
-            pin_memory=False, shuffle=False, drop_last=True
+            pin_memory=False, shuffle=False, drop_last=False
         )
         loaders[name] = loader
     return loaders
@@ -603,7 +607,7 @@ def get_ssltrain_imagenet_pytorch_dataloaders_distributed(
 class Transform:
     def __init__(self):
         self.transform = transforms.Compose([
-            transforms.RandomResizedCrop(224, interpolation=Image.BICUBIC),
+            transforms.RandomResizedCrop((112,112), interpolation=Image.BICUBIC),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomApply(
                 [transforms.ColorJitter(brightness=0.4, contrast=0.4,
@@ -618,7 +622,7 @@ class Transform:
                                 std=[0.229, 0.224, 0.225])
         ])
         self.transform_prime = transforms.Compose([
-            transforms.RandomResizedCrop(224, interpolation=Image.BICUBIC),
+            transforms.RandomResizedCrop((112,112), interpolation=Image.BICUBIC),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomApply(
                 [transforms.ColorJitter(brightness=0.4, contrast=0.4,
@@ -653,7 +657,7 @@ class MultiViewTransform(Transform):
 class EvalTransform:
     def __init__(self):
         self.transform = transforms.Compose([
-            transforms.Resize((224, 224), interpolation=Image.BICUBIC),
+            transforms.Resize((112, 112), interpolation=Image.BICUBIC),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                 std=[0.229, 0.224, 0.225])
