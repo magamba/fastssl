@@ -1,8 +1,8 @@
 #! /bin/bash
-#SBATCH -A berzelius-2024-116
+#SBATCH -A berzelius-2024-343
 #SBATCH --gpus=1
-#SBATCH -t 1:00:00
-#SBATCH -C fat
+#SBATCH -t 2:00:00
+#SBATCH -C thin
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /proj/memorization/logs/%A_%a.out
@@ -42,11 +42,11 @@ else
     ckpt_str="-cifar10"
 fi
 
-PRETRAIN="True"
+PRETRAIN=""
 LINEAR_EVAL=""
 NOISY_EVAL=""
 OOD_EVAL=""
-SSL_EVAL=""
+SSL_EVAL="True"
 
 lambdas=(0.0001 0.0002 0.0004 0.001 0.002 0.005 0.01 0.02)
 #pdepths=(1 2 3 4)
@@ -158,6 +158,7 @@ python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.ya
                     --training.track_alpha=True \
                     --training.track_jacobian=True \
                     --training.track_covariance=True \
+                    --training.covariance_augmentations=10 \
                     --training.jacobian_batch_size=$jac_batch_size \
                     --training.weight_decay=1e-5 \
                     --training.num_augmentations=$naugs \
@@ -453,6 +454,8 @@ if [ "$SSL_EVAL" != "" ]; then
                         --training.num_workers=$num_workers \
                         --training.log_interval=20 \
                         --training.track_alpha=True \
+                        --training.track_covariance=True \
+                        --training.covariance_augmentations=10 \
                         --training.jacobian_batch_size=$jac_batch_size \
                         --training.weight_decay=1e-5 \
                         --training.num_augmentations=$naugs \
