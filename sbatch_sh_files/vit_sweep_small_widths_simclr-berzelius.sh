@@ -1,17 +1,18 @@
 #! /bin/bash
-#SBATCH -A berzelius-2024-116
+#SBATCH -A berzelius-2024-343
 #SBATCH --gpus=1
 #SBATCH -t 3:00:00
-#SBATCH -C fat
+#SBATCH -C thin
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /proj/memorization/logs/%A_%a.out
 #SBATCH --error /proj/memorization/logs/%A_%a.err
-#SBATCH --array 45-59%2
+#SBATCH --array 48,49%8
+#####SBATCH --array 45-59%8
 ####SBATCH --array 87-115
 ####SBATCH --array 0-173%30
 
-NAME="ssl_simclr_robustness"
+NAME="ssl_simclr_robustness_no_compile"
 
 # load env
 source scripts/setup_env
@@ -38,16 +39,16 @@ then
     ckpt_str="-stl10"
 else
     batch_size=512
-    jac_batch_size=512
+    jac_batch_size=128
     proj_str="simclr-cifar10-"
     ckpt_str="-cifar10"
 fi
 
-PRETRAIN="True"
+PRETRAIN=""
 LINEAR_EVAL=""
 NOISY_EVAL=""
-OOD_EVAL=""
-SSL_EVAL=""
+OOD_EVAL="True"
+SSL_EVAL="True"
 
 temps=(0.005 0.02 0.05 0.1 0.2 0.5)
 #pdepths=(1 2 3 4)
@@ -155,8 +156,8 @@ python scripts/train_model_widthVary.py --config-file configs/cc_SimCLR.yaml \
                     --training.track_alpha=True \
                     --training.track_jacobian=True \
                     --training.track_covariance=True \
+                    --training.covariance_augmentations=10 \
                     --training.jacobian_batch_size=$jac_batch_size \
-                    --training.local_batch_size=$local_batch_size \
                     --training.weight_decay=1e-5 \
                     --training.algorithm="SimCLR" \
                     --training.num_augmentations=$naugs \
@@ -428,7 +429,6 @@ if [ "$SSL_EVAL" != "" ]; then
     # copy checkpoint of full model
     src_checkpt="$checkpt_dir/"$model_key"_width"$width"/"$naugs"_augs/temp_"$(printf %.3f $temp)"_pdim_"$pdim"_pdepth_"$pdepth"_bsz_"$batch_size"_lr_0.001_wd_1e-05/"$naugs"_augs_train/exp_SimCLR_100_seed_"$seed".pt"
 
-
     if [ ! -f "$src_checkpt" ];
     then
         echo "Error: no file not found $src_checkpt"
@@ -458,11 +458,13 @@ if [ "$SSL_EVAL" != "" ]; then
                         --training.num_workers=$num_workers \
                         --training.log_interval=20 \
                         --training.track_alpha=True \
+                        --training.track_covariance=True \
+                        --training.covariance_augmentations=10 \
                         --training.jacobian_batch_size=$jac_batch_size \
                         --training.weight_decay=1e-5 \
                         --training.num_augmentations=$naugs \
+                        --training.algorithm="SimCLR" \
                         --eval.ssl_eval=True \
-                        --eval.train_algorithm="SimCLR" \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                         --logging.wandb_project=$wandb_projname
 
@@ -496,9 +498,9 @@ if [ "$SSL_EVAL" != "" ]; then
                             --training.jacobian_batch_size=$jac_batch_size \
                             --training.weight_decay=1e-5 \
                             --training.num_augmentations=$naugs \
+                            --training.algorithm="SimCLR" \
                             --eval.ssl_eval=True \
                             --eval.ood_noise_type=$noise \
-                            --eval.train_algorithm="SimCLR" \
                             --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                             --logging.wandb_project=$wandb_projname
 
