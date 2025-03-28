@@ -1,13 +1,16 @@
 #! /bin/bash
 #SBATCH -A NAISS2023-5-476
 #SBATCH -p alvis
-#SBATCH --gpus-per-node=A100:1
-#SBATCH -t 10:00:00
+#SBATCH --exclude alvis6-01,alvis7-11
+#SBATCH --exclude alvis7-11
+#SBATCH --gpus-per-node=A40:1
+#SBATCH -t 1-0:00:00
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /cephyr/users/%u/Alvis/linear-regions/logs/%A_%a.out
 #SBATCH --error /cephyr/users/%u/Alvis/linear-regions/logs/%A_%a.err
-#SBATCH --array 45-59%4
+#SBATCH --array 54%8
+#####SBATCH --array 45-59%8
 ####SBATCH --array 87-115
 ####SBATCH --array 0-173%30
 
@@ -79,9 +82,20 @@ fi
 
 if [ "$dsize" == "" ] || [ "$dsize" == "0" ]; then
     dsize=0
+fi
+
+pretrain_args=""
+dsize_int=$(python -c "print(round(float($dsize * 50000)))")
+#effective_batch_div=$(((2 * dsize_int) % naugs))
+effective_batch_div=0
+if [ "$PRETRAIN" != "" ] && [ $naugs -gt 2 ] && [ $effective_batch_div -eq 0 ]; then
+    pretrain_args="$pretrain_args --training.local_forward=True"
+fi
+
+if [ "$dsize" == "" ] || [ "$dsize" == "0" ]; then
+    dsize=0
 else
     ckpt_str="$ckpt_str""-nsamples_""$dsize"
-    dsize_int=$(python -c "print(round(float($dsize * 50000)))")
     if [ $dsize_int -lt $batch_size ]; then
         batch_size=$dsize_int
     fi
@@ -174,7 +188,8 @@ $PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_SimCLR.yam
                     --training.epochs="$epochs" \
                     --training.num_augmentations=$naugs \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
-                    --logging.wandb_project=$wandb_projname
+                    --logging.wandb_project=$wandb_projname \
+                    $pretrain_args
 
 status=$?
 
@@ -347,7 +362,7 @@ then
     exit 1
 else
     echo "Copying SSL features to local storage"
-    cp -v "$src_checkpt" "$SLURM_TMPDIR/exp_ssl_"$epochs".pth"
+    cp -v "$src_checkpt" "$SLURM_TMPDIR/exp_SimCLR_"$epochs".pth"
 fi
 
 
@@ -419,9 +434,9 @@ for noise in ${ood_noise_types[@]}; do
         trainset="${DATA_DIR}"/$pretrain_dataset
         testset="${DATA_DIR}"/"$pretrain_dataset"-c/$noise
         echo "Copying encoder features to local storage"
-        cp -v "$encoder_checkpt" "$SLURM_TMPDIR/exp_ssl_100.pth"
+        cp -v "$encoder_checkpt" "$SLURM_TMPDIR/exp_SimCLR_200.pth"
+        cp -v "$encoder_checkpt" "$SLURM_TMPDIR/exp_ssl_200.pth"
         linear_probe_args="--eval.linear_probe_ckpt=$src_checkpt"
-
     fi
 
     if [ "$dataset" != "imagenet100c" ]; then
@@ -467,7 +482,8 @@ for noise in ${ood_noise_types[@]}; do
                         --eval.ood_eval=True \
                         --eval.ood_noise_type=$noise \
                         --logging.use_wandb=True --logging.wandb_group=$wandb_group \
-                        --logging.wandb_project=$wandb_projname
+                        --logging.wandb_project=$wandb_projname \
+                        $linear_probe_args
 
     new_status=$?
     status=$((status|new_status))
@@ -488,6 +504,7 @@ if [ "$SSL_EVAL" != "" ]; then
         exit 1
     else
         echo "Copying SSL features to local storage"
+        cp -v "$src_checkpt" "$SLURM_TMPDIR/exp_SimCLR_"$epochs".pth"
         cp -v "$src_checkpt" "$SLURM_TMPDIR/exp_ssl_"$epochs".pth"
     fi
 

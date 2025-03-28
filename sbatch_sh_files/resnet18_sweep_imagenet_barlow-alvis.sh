@@ -1,13 +1,15 @@
 #! /bin/bash
 #SBATCH -A NAISS2023-5-476
 #SBATCH -p alvis
-#SBATCH --gpus-per-node=A100:1
-#SBATCH -t 9:00:00
+#SBATCH --exclude alvis6-01
+#SBATCH --gpus-per-node=A40:1
+#SBATCH -t 1-0:00:00
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /cephyr/users/%u/Alvis/linear-regions/logs/%A_%a.out
 #SBATCH --error /cephyr/users/%u/Alvis/linear-regions/logs/%A_%a.err
-#SBATCH --array 75-89%8
+#SBATCH --array 85-88%8
+####SBATCH --array 75-89%8
 
 #NAME="ssl_barlow_twins_robustness"
 NAME="ssl_barlow_twins_robustness_inverse_scaling"
@@ -77,9 +79,20 @@ fi
 
 if [ "$dsize" == "" ] || [ "$dsize" == "0" ]; then
     dsize=0
+fi
+
+pretrain_args=""
+dsize_int=$(python -c "print(round(float($dsize * 50000)))")
+#effective_batch_div=$(((2 * dsize_int) % naugs))
+effective_batch_div=0
+if [ "$PRETRAIN" != "" ] && [ $naugs -gt 2 ] && [ $effective_batch_div -eq 0 ]; then
+    pretrain_args="$pretrain_args --training.local_forward=True"
+fi
+
+if [ "$dsize" == "" ] || [ "$dsize" == "0" ]; then
+    dsize=0
 else
     ckpt_str="$ckpt_str""-nsamples_""$dsize"
-    dsize_int=$(python -c "print(round(float($dsize * 50000)))")
     if [ $dsize_int -lt $batch_size ]; then
         batch_size=$dsize_int
     fi
@@ -178,7 +191,8 @@ $PYTHON_BIN scripts/train_model_widthVary.py --config-file configs/cc_barlow_twi
                     --training.epochs=$epochs \
                     --training.num_augmentations=$naugs \
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
-                    --logging.wandb_project=$wandb_projname
+                    --logging.wandb_project=$wandb_projname \
+                    $pretrain_args
 
 status=$?
 
@@ -424,7 +438,7 @@ for noise in ${ood_noise_types[@]}; do
         trainset="${DATA_DIR}"/$pretrain_dataset
         testset="${DATA_DIR}"/"$pretrain_dataset"-c/$noise
         echo "Copying encoder features to local storage"
-        cp -v "$encoder_checkpt" "$SLURM_TMPDIR/exp_ssl_100.pth"
+        cp -v "$encoder_checkpt" "$SLURM_TMPDIR/exp_ssl_200.pth"
         linear_probe_args="--eval.linear_probe_ckpt=$src_checkpt"
 
     fi

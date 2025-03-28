@@ -11,8 +11,9 @@ from fastssl.utils.powerlaw import rankme
 plots_path = "./plots"
 name = 'ssl'
 
-global missing_runs
+global missing_runs, empty_files
 missing_runs = []
+empty_files = []
 
 try:
     root_dir = os.path.join(
@@ -33,8 +34,8 @@ def parse_stats(fname, stats, metric, epoch, ood=False):
         return 0
 
     if metric not in [
-        "train_acc_1", "train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored", 
-        "test_acc_1", "train_loss", "train_loss_on_diag", "train_loss_off_diag", "test_loss", 
+        "train_acc_1", "train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored",
+        "test_acc_1", "train_loss", "train_loss_on_diag", "train_loss_off_diag", "test_loss",
         "test_loss_on_diag", "test_loss_off_diag"
     ]:
         if metric == "rankme":
@@ -57,8 +58,8 @@ def parse_stats(fname, stats, metric, epoch, ood=False):
     else:
         val = metric_vals[-1]
     return val
-        
-        
+
+
 """Figure 1 -- Model scaling w/ dataset scaling and aug scaling
 """
 
@@ -76,6 +77,8 @@ figure1_conf = {
     "widths": {
         "resnet18": {
             "cifar10": list(range(8,65,4)),
+            "cifar100": list(range(8,65,4)),
+            "imagenet100": list(range(8,65,4)),
         },
         "vit": {
             "cifar10": list(range(8,65,4)),
@@ -100,7 +103,7 @@ figure1_conf = {
         "barlow_twins": {
             "cifar100": [2, 4, 8, 16],
             "imagenet100": [2, 4, 8],
-        }
+        },
         "simclr": {
             "cifar10": [2, 4, 8, 16],
             "cifar100": [2, 4, 8, 16],
@@ -108,7 +111,7 @@ figure1_conf = {
         }
     },
     "noise_configs": [0, 10, 20, 40, 60, 80, 100],
-    "nsamples":  [0.002, 0.004, 0.00768, 0.01, 0.02, 0.04096, 0.2, 0.4, 0.6, 0.8, 1.0],
+    "nsamples":  [0.2, 0.4, 0.6, 0.8, 1.0], # [0.002, 0.004, 0.00768, 0.01, 0.02, 0.04096, 0.2, 0.4, 0.6, 0.8, 1.0],
     "nsamples_strings": {
         nsamples: [f"-nsamples_{nsamples}" if nsamples != 1.0 else ""] for nsamples in [0.002, 0.004, 0.00768, 0.01, 0.02, 0.04096, 0.2, 0.4, 0.6, 0.8, 1.0]
     },
@@ -215,6 +218,7 @@ figure1_conf.update({
         },
     },
 })
+
 
 figure1_conf.update({
     "ood_filenames": {
@@ -352,12 +356,17 @@ def aggregate_fig1(destdir=plots_path):
                                                     continue
                                                 epoch = figure1_conf["epochs"][algorithm]
                                                 logger.info(f"Parsing {base_model}_{width} {augs} augs nsamples {nsamples} pdepth {pdepth} hparam {hparam} epoch {epoch} {metric} seed {s_id}")
-                                                plot_data[algorithm][dataset][base_model][a_id, n_id, d_id, w_id, h_id, m_id, s_id] = parse_stats(fname, stats, metric, epoch)
-                                                
+                                                try:
+                                                    plot_data[algorithm][dataset][base_model][a_id, n_id, d_id, w_id, h_id, m_id, s_id] = parse_stats(fname, stats, metric, epoch)
+                                                except IndexError:
+                                                    logger.info(f"File not found: {fname}")
+                                                    empty_files.append(fname)
+                                                    break
+
                                         except FileNotFoundError:
                                             logger.info(f"File not found: {fname}")
                                             missing_runs.append(fname)
-                                            
+
                                         for (met_id, metric) in metric_ids:
                                             file_dict = "ssl_eval_filenames" if metric in ssl_eval_metrics else "covariance_filenames"
                                             fname = figure1_conf[file_dict][algorithm][dataset][base_model][augs][nsamples][pdepth][width][hparam][s_id]
@@ -370,7 +379,7 @@ def aggregate_fig1(destdir=plots_path):
                                                 epoch = figure1_conf["epochs"][algorithm]
                                                 logger.info(f"Parsing {base_model}_{width} {augs} augs nsamples {nsamples} pdepth {pdepth} hparam {hparam} epoch {epoch} {metric} seed {s_id}")
                                                 plot_data[algorithm][dataset][base_model][a_id, n_id, d_id, w_id, h_id, met_id, s_id] = parse_stats(fname, stats, metric, epoch)
-                                                    
+
                                             except FileNotFoundError:
                                                 logger.info(f"File not found: {fname}")
                                                 missing_runs.append(fname)
@@ -438,16 +447,27 @@ def aggregate_fig1(destdir=plots_path):
             for base_model in figure1_conf["base_models"]:
                 nwidths = len(figure1_conf["widths"][base_model][dataset])
                 ood_data[algorithm][dataset][base_model] = np.zeros((naugs, nnoise, nnsamples, npdepths, nwidths, nhparams, nmetrics, nseeds, nlevels))
-                for a_id, augs in enumerate(figure1_conf["augs"][algorithm]):
+                for a_id, augs in enumerate(figure1_conf["augs"][algorithm][dataset]):
                     for n_id, noise in enumerate([0] + figure1_conf["ood_noise_types"]):
                         for ns_id, nsamples in enumerate(figure1_conf["nsamples"]):
                             for p_id, pdepth in enumerate(figure1_conf["projection_depths"]):
                                 for w_id, width in enumerate(figure1_conf["widths"][base_model][dataset]):
-                                    for h_id, hparam in enumerate(figure1_conf["hyperparams"][algorithm]):
+                                    for h_id, hparam in enumerate(figure1_conf["hyperparams"][algorithm][width]):
                                         h_id = 0
                                         for s_id in range(nseeds):
                                             file_dict = "performance_filenames" if n_id == 0 else "ood_filenames"
-                                            fname = figure1_conf[file_dict][algorithm][dataset][base_model][augs][nsamples][pdepth][width][hparam][noise][s_id]
+                                            try:
+                                                fname = figure1_conf[file_dict][algorithm][dataset][base_model][augs][nsamples][pdepth][width][hparam][noise][s_id]
+                                            except KeyError as e:
+                                                print(f"Missing key {e.args[0]} at {file_dict} {algorithm} {dataset} {base_model}")
+                                                print(figure1_conf[file_dict][algorithm][dataset][base_model].keys())
+                                                print(figure1_conf[file_dict][algorithm][dataset][base_model][augs].keys())
+                                                print(figure1_conf[file_dict][algorithm][dataset][base_model][augs][nsamples].keys())
+                                                print(figure1_conf[file_dict][algorithm][dataset][base_model][augs][nsamples][pdepth].keys())
+                                                print(figure1_conf[file_dict][algorithm][dataset][base_model][augs][nsamples][pdepth][width].keys())
+                                                print(figure1_conf[file_dict][algorithm][dataset][base_model][augs][nsamples][pdepth][width][hparam].keys())
+                                                print(figure1_conf[file_dict][algorithm][dataset][base_model][augs][nsamples][pdepth][width][hparam][noise].keys())
+                                                sys.exit(1)
                                             logger.info(f"Loading {fname}")
                                             try:
                                                 stats = np.load(
@@ -502,14 +522,19 @@ def aggregate_fig1(destdir=plots_path):
 
     figure1_data.pop("performance_filenames")
     figure1_data.pop("ood_filenames")
-    figure1_data.pop("covariance_filenames")
-    figure1_data.pop("ood_ssl_eval_filenames")
-    figure1_data.pop("ssl_eval_filenames")
+    figure1_data.pop("covariance_filenames", None)
+    figure1_data.pop("ood_ssl_eval_filenames", None)
+    figure1_data.pop("ssl_eval_filenames", None)
     figure1_data["ood_data"] = ood_data
 
     if len(missing_runs) > 0:
         logger.info("The following files were missing:")
         for f in missing_runs:
+            logger.info(f)
+
+    if len(empty_files) > 0:
+        logger.info("The following files were empty or corrupted:")
+        for f in empty_files:
             logger.info(f)
 
     filename = os.path.join(destdir, 'plot_data.json')

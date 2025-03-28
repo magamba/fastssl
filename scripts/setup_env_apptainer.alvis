@@ -1,0 +1,49 @@
+#!/bin/bash
+
+function deactivate_conda_if_in_env() {
+  if [ "$CONDA_SHLVL" -eq "1" ]; then
+      conda deactivate
+  fi
+}
+
+# assuming that conda is installed under /opt/conda
+# and that all packages are installed in the base environment
+source "/opt/conda/bin/activate"
+
+echo "Setting env on ${SLURMD_NODENAME}"
+nvidia-smi
+user="$USER"
+if [ -z "$user" ]; then
+    user="$SLURM_JOB_USER"
+fi
+echo "SETUP_ENV - user=$user"
+SAVE_DIR="/mimer/NOBACKUP/groups/linear-regions/smoothness/checkpoints"
+OUTPUT="$SAVE_DIR"
+DATA_DIR="/mimer/NOBACKUP/groups/linear-regions/smoothness/data"
+DEVICE="cuda"
+
+# avoid getting stuck at PCA
+#export MKL_THREADING_LAYER=TBB
+
+# set up wandb
+WANDB_API_KEY="a31e51e69e539eaffb5d3683c402e59375cd47e6"
+WANDB_CACHE_DIR="$TMPDIR"
+WANDB_MODE="offline"
+
+# Set this to zero, disabling random salts for hashes
+# if an arg is given, then use that instead
+PYTHONHASHSEED=0
+for (( i=1; i< "$#"; i++ )); do
+    if [ "${!i}" = "--s_python-hash-seed" ]; then
+        validx=$((i+1))
+        PYTHONHASHSEED=${!validx}
+    fi
+done
+
+echo "SETUP_ENV - PYTHONHASHSEED=$PYTHONHASHSEED"
+
+
+export SAVE_DIR DATA_DIR OUTPUT DEVICE PYTHONHASHSEED WANDB_API_KEY WANDB_CACHE_DIR WANDB_MODE
+
+echo "SETUP_ENV - Current ENV is:"
+printenv
