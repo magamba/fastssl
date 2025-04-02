@@ -1667,7 +1667,7 @@ figure9_conf = {
         },
     },
     "projection_depths": [2],
-     "hyperparams": {
+    "hyperparams": {
         "barlow_twins": {
             width: [ 1. / (width * 32) ] for width in list(range(8,65,4)) # [0.005, ], # 0.02 ],
         },
@@ -2160,6 +2160,468 @@ def aggregate_fig9(destdir=plots_path):
     logger.info(f"Saving plot data to {filename}")
     with open(filename, 'w') as fp:
         json.dump(figure9_data, fp, allow_nan=False)
+        
+        
+
+""" Figure 10
+
+    SSL pretraining: alpha, feature jacobian, effective rank
+    
+    algorithms: barlow_twins, simclr
+    models: resnet18
+    datasets: imagenet100
+    epoch: 100 (barlow_twins), 100 (simclr)
+    
+    train_configs: ssl, linear
+    widths
+    seeds
+    noise configs
+    metrics
+"""
+
+figure10_conf = {
+    "algorithms": ["barlow_twins", "simclr"],
+    "base_models": ["resnet18",], # "vit"
+    "expansion": {
+        "resnet18": [32,],
+        "vit": [6,],
+    },
+    "model_strings": {
+        "resnet18": ["resnet18/"],
+        "vit": ["vit_"],
+    },
+    "widths": {
+        "resnet18": {
+            "imagenet100": list(range(8,65,4)),
+        },
+        "vit": {
+            "imagenet100": list(range(8,65,4)),
+        },
+    },
+    "projection_depths": [2],
+    "hyperparams": {
+        "barlow_twins": {
+            width: [ 1. / (width * 32) ] for width in list(range(8,65,4)) # [0.005, ], # 0.02 ],
+        },
+        "simclr": {
+            width: [0.1,] for width in range(8,65,4)
+        },
+    },
+    "seeds" : [0,],
+    "epochs": {
+        "barlow_twins": 100,
+        "simclr": 100,
+        "linear": 200,
+    },
+    "augs": {
+        "barlow_twins": [2, 4, 8],
+        "simclr": [2, 4, 8],
+    },
+    "noise_configs": [0, 10, 20, 40, 60, 80, 100],
+    "nsamples":  [1.0],
+    "nsamples_strings": {
+        nsamples: [f"-nsamples_{nsamples}" if nsamples != 1.0 else ""] for nsamples in [0.002, 0.004, 0.00768, 0.01, 0.02, 0.04096, 0.2, 0.4, 0.6, 0.8, 1.0]
+    },
+    "batch_sizes": {
+        nsamples: [ round(nsamples * 50000) if round(nsamples * 50000) < 512 else 512 ] for nsamples in [0.002, 0.004, 0.00768, 0.01, 0.02, 0.04096, 0.2, 0.4, 0.6, 0.8, 1.0]
+    },
+    "datasets": ["imagenet100",],
+    "performance_metrics": ["train_acc_1", "train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored", "test_acc_1"],
+    "ood_metrics": ["test_acc_1", "test_loss_ssl"],
+    "ood_noise_levels": list(range(1,6)),
+    "ood_noise_types": [
+        "frost",
+        "glass_blur",
+        "spatter",
+        "gaussian_blur",
+        "impulse_noise",
+        "motion_blur",
+        "shot_noise",
+        "speckle_noise",
+        "fog",
+        "gaussian_noise",
+        "jpeg_compression",
+        "pixelate",
+        "snow",
+    ],
+    "metrics": ["train_loss", "test_loss", "alpha", "feature_input_jacobian", "rankme", "intra_manifold_eigen", "inter_manifold_eigen", "intra_manifold_gen_eigen", "inter_manifold_gen_eigen"],
+}
+
+figure10_conf.update({
+    "filenames": {
+        "barlow_twins": {
+            dataset: {
+                model: {
+                    augs: {
+                        nsamples: {
+                            pdepth: {
+                                width: {
+                                    hparam: [ f"{root_dir}_barlow_twins_robustness_inverse_scaling-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}_alpha_ssl_100_seed_{seed}.npy"  for model_str in figure10_conf["model_strings"][model] for base_width in figure10_conf["expansion"][model] for nsample_str in figure10_conf["nsamples_strings"][nsamples] for seed in figure10_conf["seeds"]
+                                    ] for hparam in figure10_conf["hyperparams"]["barlow_twins"][width]
+                                } for width in figure10_conf["widths"][model][dataset]
+                            } for pdepth in figure10_conf["projection_depths"]
+                        } for nsamples in figure10_conf["nsamples"]
+                    } for augs in figure10_conf["augs"]["barlow_twins"]
+                } for model in figure10_conf["base_models"]
+            } for dataset in figure10_conf["datasets"]
+        },
+        "simclr": {
+            dataset: {
+                model: {
+                    augs: {
+                        nsamples: {
+                            pdepth: {
+                                width: {
+                                    hparam: [ f"{root_dir}_simclr_robustness-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_{bsz}_lr_0.001_wd_1e-05/results_{dataset}_alpha_SimCLR_100_seed_{seed}.npy"  for model_str in figure10_conf["model_strings"][model] for base_width in figure10_conf["expansion"][model] for nsample_str in figure10_conf["nsamples_strings"][nsamples] for seed in figure10_conf["seeds"] for bsz in figure10_conf["batch_sizes"][nsamples]
+                                    ] for hparam in figure10_conf["hyperparams"]["simclr"][width]
+                                } for width in figure10_conf["widths"][model][dataset]
+                            } for pdepth in figure10_conf["projection_depths"]
+                        } for nsamples in figure10_conf["nsamples"]
+                    } for augs in figure10_conf["augs"]["simclr"]
+                } for model in figure10_conf["base_models"]
+            } for dataset in figure10_conf["datasets"]
+        },
+    },
+})
+
+figure10_conf.update({
+    "performance_filenames": {
+        "barlow_twins": {
+            dataset: {
+                model: {
+                    augs: {
+                        nsamples: {
+                            pdepth: {
+                                width: {
+                                    hparam: {
+                                        0: [ f"{root_dir}_barlow_twins_robustness_inverse_scaling-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure10_conf["model_strings"][model] for base_width in figure10_conf["expansion"][model] for nsample_str in figure10_conf["nsamples_strings"][nsamples] for seed in figure10_conf["seeds"] ],
+                                        **{noise: [ f"{root_dir}_barlow_twins_robustness_inverse_scaling_noise{noise}-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure10_conf["model_strings"][model] for base_width in figure10_conf["expansion"][model] for nsample_str in figure10_conf["nsamples_strings"][nsamples] for seed in figure10_conf["seeds"] ] for noise in figure10_conf["noise_configs"][1:] }
+                                    } for hparam in figure10_conf["hyperparams"]["barlow_twins"][width]
+                                } for width in figure10_conf["widths"][model][dataset]
+                            } for pdepth in figure10_conf["projection_depths"]
+                        } for nsamples in figure10_conf["nsamples"]
+                    } for augs in figure10_conf["augs"]["barlow_twins"]
+                } for model in figure10_conf["base_models"]
+            } for dataset in figure10_conf["datasets"]
+        },
+        "simclr": {
+            dataset: {
+                model: {
+                    augs: {
+                        nsamples: {
+                            pdepth: {
+                                width: {
+                                    hparam: {
+                                        0: [ f"{root_dir}_simclr_robustness-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_{bsz}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure10_conf["model_strings"][model] for base_width in figure10_conf["expansion"][model] for nsample_str in figure10_conf["nsamples_strings"][nsamples] for bsz in figure10_conf["batch_sizes"][nsamples] for seed in figure10_conf["seeds"] ],
+                                        **{noise: [ f"{root_dir}_simclr_robustness_noise{noise}-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_{bsz}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure10_conf["model_strings"][model] for base_width in figure10_conf["expansion"][model] for nsample_str in figure10_conf["nsamples_strings"][nsamples] for bsz in figure10_conf["batch_sizes"][nsamples] for seed in figure10_conf["seeds"] ] for noise in figure10_conf["noise_configs"][1:] }
+                                    } for hparam in figure10_conf["hyperparams"]["simclr"][width]
+                                } for width in figure10_conf["widths"][model][dataset]
+                            } for pdepth in figure10_conf["projection_depths"]
+                        } for nsamples in figure10_conf["nsamples"]
+                    } for augs in figure10_conf["augs"]["simclr"]
+                } for model in figure10_conf["base_models"]
+            } for dataset in figure10_conf["datasets"]
+        },
+    },
+})
+
+#figure10_conf.update({
+#    "ood_filenames": {
+#        "barlow_twins": {
+#            dataset: {
+#                model: {
+#                    augs: {
+#                        nsamples: {
+#                            pdepth: {
+#                                width: {
+#                                    hparam: {
+#                                        0: [ f"{root_dir}_barlow_twins_robustness_inverse_scaling-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure10_conf["model_strings"][model] for base_width in figure10_conf["expansion"][model] for nsample_str in figure10_conf["nsamples_strings"][nsamples] for seed in figure10_conf["seeds"] ],
+#                                        **{noise: [ f"{root_dir}_barlow_twins_robustness_inverse_scaling-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}c_{noise}_ood_eval_linear_200_seed_{seed}.npy" for model_str in figure10_conf["model_strings"][model] for base_width in figure10_conf["expansion"][model] for nsample_str in figure10_conf["nsamples_strings"][nsamples] for seed in figure10_conf["seeds"] ] for noise in figure10_conf["ood_noise_types"] }
+#                                    } for hparam in figure10_conf["hyperparams"]["barlow_twins"][width]
+#                                } for width in figure10_conf["widths"][model][dataset]
+#                            } for pdepth in figure10_conf["projection_depths"]
+#                        } for nsamples in figure10_conf["nsamples"]
+#                    } for augs in figure10_conf["augs"]["barlow_twins"]
+#                } for model in figure10_conf["base_models"]
+#            } for dataset in figure10_conf["datasets"]
+#        },
+#        "simclr": {
+#            dataset: {
+#                model: {
+#                    augs: {
+#                        nsamples: {
+#                            pdepth: {
+#                                width: {
+#                                    hparam: {
+#                                        0: [ f"{root_dir}_simclr_robustness_no_compile-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_{bsz}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}_alpha_linear_200_seed_{seed}.npy" for model_str in figure10_conf["model_strings"][model] for base_width in figure10_conf["expansion"][model] for nsample_str in figure10_conf["nsamples_strings"][nsamples] for bsz in figure10_conf["batch_sizes"][nsamples] for seed in figure10_conf["seeds"] ],
+#                                        **{noise: [ f"{root_dir}_simclr_robustness_no_compile-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_{bsz}_lr_0.001_wd_1e-06/1_augs_eval/results_{dataset}c_{noise}_ood_eval_linear_200_seed_{seed}.npy" for model_str in figure10_conf["model_strings"][model] for base_width in figure10_conf["expansion"][model] for nsample_str in figure10_conf["nsamples_strings"][nsamples] for bsz in figure10_conf["batch_sizes"][nsamples] for seed in figure10_conf["seeds"] ] for noise in figure10_conf["ood_noise_types"] }
+#                                    } for hparam in figure10_conf["hyperparams"]["simclr"][width]
+#                                } for width in figure10_conf["widths"][model][dataset]
+#                            } for pdepth in figure10_conf["projection_depths"]
+#                        } for nsamples in figure10_conf["nsamples"]
+#                    } for augs in figure10_conf["augs"]["simclr"]
+#                } for model in figure10_conf["base_models"]
+#            } for dataset in figure10_conf["datasets"]
+#        },
+#    },
+#})
+
+#figure10_conf.update({
+#    "ood_ssl_eval_filenames": {
+#        "barlow_twins": {
+#            dataset: {
+#                model: {
+#                    augs: {
+#                        nsamples: {
+#                            pdepth: {
+#                                width: {
+#                                    hparam: {
+#                                        0: [ f"{root_dir}_barlow_twins_robustness_inverse_scaling-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}c_ssl_eval_ssl_100_seed_{seed}.npy" for model_str in figure10_conf["model_strings"][model] for base_width in figure10_conf["expansion"][model] for nsample_str in figure10_conf["nsamples_strings"][nsamples] for seed in figure10_conf["seeds"] ],
+#                                        **{noise: [ f"{root_dir}_barlow_twins_robustness_inverse_scaling-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/lambd_{hparam:.6f}_pdim_{base_width * width}_pdepth_{pdepth}_lr_0.001_wd_1e-05/results_{dataset}c_{noise}_ssl_eval_ssl_100_seed_{seed}.npy" for model_str in figure10_conf["model_strings"][model] for base_width in figure10_conf["expansion"][model] for nsample_str in figure10_conf["nsamples_strings"][nsamples] for seed in figure10_conf["seeds"] ] for noise in figure10_conf["ood_noise_types"] }
+#                                    } for hparam in figure10_conf["hyperparams"]["barlow_twins"][width]
+#                                } for width in figure10_conf["widths"][model][dataset]
+#                            } for pdepth in figure10_conf["projection_depths"]
+#                        } for nsamples in figure10_conf["nsamples"]
+#                    } for augs in figure10_conf["augs"]["barlow_twins"]
+#                } for model in figure10_conf["base_models"]
+#            } for dataset in figure10_conf["datasets"]
+#        },
+#        "simclr": {
+#            dataset: {
+#                model: {
+#                    augs: {
+#                        nsamples: {
+#                            pdepth: {
+#                                width: {
+#                                    hparam: {
+#                                        0: [ f"{root_dir}_simclr_robustness_no_compile-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_{bsz}_lr_0.001_wd_1e-05/results_{dataset}c_ssl_eval_SimCLR_100_seed_{seed}.npy" for model_str in figure10_conf["model_strings"][model] for base_width in figure10_conf["expansion"][model] for nsample_str in figure10_conf["nsamples_strings"][nsamples] for bsz in figure10_conf["batch_sizes"][nsamples] for seed in figure10_conf["seeds"] ],
+#                                        **{noise: [ f"{root_dir}_simclr_robustness_no_compile-{dataset}{nsample_str}/{model_str}width{width}/{augs}_augs/temp_{hparam:.3f}_pdim_{base_width * width}_pdepth_{pdepth}_bsz_{bsz}_lr_0.001_wd_1e-05/results_{dataset}c_{noise}_ssl_eval_SimCLR_100_seed_{seed}.npy" for model_str in figure10_conf["model_strings"][model] for base_width in figure10_conf["expansion"][model] for nsample_str in figure10_conf["nsamples_strings"][nsamples] for bsz in figure10_conf["batch_sizes"][nsamples] for seed in figure10_conf["seeds"] ] for noise in figure10_conf["ood_noise_types"] }
+#                                    } for hparam in figure10_conf["hyperparams"]["simclr"][width]
+#                                } for width in figure10_conf["widths"][model][dataset]
+#                            } for pdepth in figure10_conf["projection_depths"]
+#                        } for nsamples in figure10_conf["nsamples"]
+#                    } for augs in figure10_conf["augs"]["simclr"]
+#                } for model in figure10_conf["base_models"]
+#            } for dataset in figure10_conf["datasets"]
+#        },
+#    },
+#})
+
+
+missing_runs = []
+def aggregate_fig10(destdir=plots_path):
+    """ Aggregate results for figure 10
+    """
+    nseeds = len(figure10_conf["seeds"])
+    nmetrics = len(figure10_conf["metrics"])
+    nnoise = len(figure10_conf["noise_configs"])
+    npdepths = len(figure10_conf["projection_depths"])
+    nnsamples = len(figure10_conf["nsamples"])
+#    covariance_metrics = [
+#        "intra_manifold_eigen", "inter_manifold_eigen", "intra_manifold_gen_eigen", "inter_manifold_gen_eigen"
+#    ]
+#    ssl_eval_metrics = ["test_loss"]
+    ignore_metrics = ["test_loss", "alpha", "feature_input_jacobian", "rankme"]
+
+    figure10_data = figure10_conf
+
+    plot_data = {}
+    for algorithm in figure10_conf["algorithms"]:
+        plot_data[algorithm] = {}
+        naugs = len(figure10_conf["augs"][algorithm])
+        for dataset in figure10_conf["datasets"]:
+            plot_data[algorithm][dataset] = {}
+
+            nhparams = 1 # len(figure10_conf["hyperparams"][algorithm])
+            for base_model in figure10_conf["base_models"]:
+                nwidths = len(figure10_conf["widths"][base_model][dataset])
+                plot_data[algorithm][dataset][base_model] = np.zeros((naugs, nnsamples, npdepths, nwidths, nhparams, nmetrics, nseeds))
+                for a_id, augs in enumerate(figure10_conf["augs"][algorithm]):
+                    for n_id, nsamples in enumerate(figure10_conf["nsamples"]):
+                        for d_id, pdepth in enumerate(figure10_conf["projection_depths"]):
+                            for w_id, width in enumerate(figure10_conf["widths"][base_model][dataset]):
+                                for h_id, hparam in enumerate(figure10_conf["hyperparams"][algorithm][width]):
+                                    h_id = 0
+                                    for s_id in range(nseeds):
+                                        fname = figure10_conf["filenames"][algorithm][dataset][base_model][augs][nsamples][pdepth][width][hparam][s_id]
+                                        logger.info(f"Loading {fname}")
+                                        try:
+                                            stats = np.load(
+                                                fname,
+                                                allow_pickle=True
+                                            ).tolist()
+                                            metric_ids = []
+                                            for m_id, metric in enumerate(figure10_conf["metrics"]):
+                                                if algorithm == "barlow_twins" and metric in ignore_metrics: continue
+                                                if metric in covariance_metrics or metric in ssl_eval_metrics:
+                                                    metric_ids.append((m_id, metric))
+                                                    continue
+                                                epoch = figure10_conf["epochs"][algorithm]
+                                                logger.info(f"Parsing {base_model}_{width} {augs} augs nsamples {nsamples} pdepth {pdepth} hparam {hparam} epoch {epoch} {metric} seed {s_id}")
+                                                plot_data[algorithm][dataset][base_model][a_id, n_id, d_id, w_id, h_id, m_id, s_id] = parse_stats(fname, stats, metric, epoch)
+                                                
+                                        except FileNotFoundError:
+                                            logger.info(f"File not found: {fname}")
+                                            missing_runs.append(fname)
+                                            
+#                                        for (met_id, metric) in metric_ids:
+#                                            file_dict = "ssl_eval_filenames" if metric in ssl_eval_metrics else "covariance_filenames"
+#                                            fname = figure10_conf[file_dict][algorithm][dataset][base_model][augs][nsamples][pdepth][width][hparam][s_id]
+#                                            logger.info(f"Loading {fname}")
+#                                            try:
+#                                                stats = np.load(
+#                                                    fname,
+#                                                    allow_pickle=True
+#                                                ).tolist()
+#                                                epoch = figure10_conf["epochs"][algorithm]
+#                                                logger.info(f"Parsing {base_model}_{width} {augs} augs nsamples {nsamples} pdepth {pdepth} hparam {hparam} epoch {epoch} {metric} seed {s_id}")
+#                                                plot_data[algorithm][dataset][base_model][a_id, n_id, d_id, w_id, h_id, met_id, s_id] = parse_stats(fname, stats, metric, epoch)
+#                                                    
+#                                            except FileNotFoundError:
+#                                                logger.info(f"File not found: {fname}")
+#                                                missing_runs.append(fname)
+
+                plot_data[algorithm][dataset][base_model] = \
+                    np.nan_to_num(plot_data[algorithm][dataset][base_model]).tolist()
+        
+    figure10_data.pop("filenames")
+    figure10_data["plot_data"] = plot_data
+    
+    nmetrics = len(figure10_conf["performance_metrics"])
+    performance_data = {}
+    for algorithm in figure10_conf["algorithms"]:
+        performance_data[algorithm] = {}
+        naugs = len(figure10_conf["augs"][algorithm])
+        epoch = figure10_conf["epochs"]["linear"]
+        for dataset in figure10_conf["datasets"]:
+            performance_data[algorithm][dataset] = {}
+            nhparams = 1 # len(figure10_conf["hyperparams"][algorithm])
+            for base_model in figure10_conf["base_models"]:
+                nwidths = len(figure10_conf["widths"][base_model][dataset])
+                performance_data[algorithm][dataset][base_model] = np.zeros((naugs, nnoise, nnsamples, npdepths, nwidths, nhparams, nmetrics, nseeds))
+                for a_id, augs in enumerate(figure10_conf["augs"][algorithm]):
+                    for n_id, noise in enumerate(figure10_conf["noise_configs"]):
+                        for ns_id, nsamples in enumerate(figure10_conf["nsamples"]):
+                            for p_id, pdepth in enumerate(figure10_conf["projection_depths"]):
+                                for w_id, width in enumerate(figure10_conf["widths"][base_model][dataset]):
+                                    for h_id, hparam in enumerate(figure10_conf["hyperparams"][algorithm][width]):
+                                        h_id = 0
+                                        for s_id in range(nseeds):
+                                            fname = figure10_conf["performance_filenames"][algorithm][dataset][base_model][augs][nsamples][pdepth][width][hparam][noise][s_id]
+                                            logger.info(f"Loading {fname}")
+                                            try:
+                                                stats = np.load(
+                                                    fname,
+                                                    allow_pickle=True
+                                                ).tolist()
+                                                for m_id, metric in enumerate(figure10_conf["performance_metrics"]):
+                                                    if noise == 0 and metric in ["train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored"]: continue
+                                                    logger.info(f"Parsing {base_model}_{width} {augs} augs nsamples {nsamples} epoch {epoch} {metric} seed {s_id}")
+                                                    performance_data[algorithm][dataset][base_model][a_id, n_id, ns_id, p_id, w_id, h_id, m_id, s_id] = parse_stats(
+                                                        fname, stats, metric, epoch
+                                                    )
+                                                
+                                            except FileNotFoundError:
+                                                logger.info(f"File not found: {fname}")
+                                                missing_runs.append(fname)
+                                
+                performance_data[algorithm][dataset][base_model] = \
+                    performance_data[algorithm][dataset][base_model].tolist()
+    
+    figure10_data["performance_data"] = performance_data
+    
+#    nmetrics = len(figure10_conf["ood_metrics"])
+#    ood_data = {}
+#    nnoise = len(figure10_conf["ood_noise_types"]) +1
+#    nlevels = len(figure10_conf["ood_noise_levels"])
+#    for algorithm in figure10_conf["algorithms"]:
+#        ood_data[algorithm] = {}
+#        naugs = len(figure10_conf["augs"][algorithm])
+#        for dataset in figure10_conf["datasets"]:
+#            ood_data[algorithm][dataset] = {}
+#            nhparams = 1 # len(figure10_conf["hyperparams"][algorithm])
+#            for base_model in figure10_conf["base_models"]:
+#                nwidths = len(figure10_conf["widths"][base_model][dataset])
+#                ood_data[algorithm][dataset][base_model] = np.zeros((naugs, nnoise, nnsamples, npdepths, nwidths, nhparams, nmetrics, nseeds, nlevels))
+#                for a_id, augs in enumerate(figure10_conf["augs"][algorithm]):
+#                    for n_id, noise in enumerate([0] + figure10_conf["ood_noise_types"]):
+#                        for ns_id, nsamples in enumerate(figure10_conf["nsamples"]):
+#                            for p_id, pdepth in enumerate(figure10_conf["projection_depths"]):
+#                                for w_id, width in enumerate(figure10_conf["widths"][base_model][dataset]):
+#                                    for h_id, hparam in enumerate(figure10_conf["hyperparams"][algorithm][width]):
+#                                        h_id = 0
+#                                        for s_id in range(nseeds):
+#                                            file_dict = "performance_filenames" if n_id == 0 else "ood_filenames"
+#                                            fname = figure10_conf[file_dict][algorithm][dataset][base_model][augs][nsamples][pdepth][width][hparam][noise][s_id]
+#                                            logger.info(f"Loading {fname}")
+#                                            try:
+#                                                stats = np.load(
+#                                                    fname,
+#                                                    allow_pickle=True
+#                                                ).tolist()
+#                                                metric_ids = []
+#                                                for m_id, metric in enumerate(figure10_conf["ood_metrics"]):
+#                                                    if metric in ["test_loss_ssl"]:
+#                                                        metric_ids.append((m_id, metric))
+#                                                        continue
+#                                                    if noise == 0 and metric in ["train_acc_1_clean", "train_acc_1_corrupted", "train_acc_1_restored"]: continue
+#                                                    logger.info(f"Parsing noise {noise} {base_model}_{width} {augs} augs nsamples {nsamples} epoch {epoch} {metric} seed {s_id}")
+#                                                    if n_id == 0:
+#                                                        ood_data[algorithm][dataset][base_model][a_id, n_id, ns_id, p_id, w_id, h_id, m_id, s_id, :] = parse_stats(
+#                                                            fname, stats, metric, epoch
+#                                                        )
+#                                                    else:
+#                                                        ood_data[algorithm][dataset][base_model][a_id, n_id, ns_id, p_id, w_id, h_id, m_id, s_id] = parse_stats(
+#                                                            fname, stats, metric, epoch
+#                                                        )
+#                                                
+#                                            except FileNotFoundError:
+#                                                logger.info(f"File not found: {fname}")
+#                                                missing_runs.append(fname)
+#                                                
+#                                            for (m_id, metric) in metric_ids:
+#                                                if metric == "test_loss_ssl": metric = "test_loss"
+#                                                fname = figure10_conf["ood_ssl_eval_filenames"][algorithm][dataset][base_model][augs][nsamples][pdepth][width][hparam][noise][s_id]
+#                                                logger.info(f"Loading {fname}")
+#                                                try:
+#                                                    stats = np.load(
+#                                                        fname,
+#                                                        allow_pickle=True
+#                                                    ).tolist()
+#                                                    logger.info(f"Parsing noise {noise} {base_model}_{width} {augs} augs nsamples {nsamples} epoch {epoch} {metric} seed {s_id}")
+#                                                    if n_id == 0:
+#                                                        ood_data[algorithm][dataset][base_model][a_id, n_id, ns_id, p_id, w_id, h_id, m_id, s_id, :] = parse_stats(
+#                                                            fname, stats, metric, epoch
+#                                                        )
+#                                                    else:
+#                                                        ood_data[algorithm][dataset][base_model][a_id, n_id, ns_id, p_id, w_id, h_id, m_id, s_id] = parse_stats(
+#                                                            fname, stats, metric, epoch
+#                                                        )
+#                                                except FileNotFoundError:
+#                                                    logger.info(f"File not found: {fname}")
+#                                                    missing_runs.append(fname)
+
+#                ood_data[algorithm][dataset][base_model] = \
+#                    ood_data[algorithm][dataset][base_model].tolist()
+
+    figure10_data.pop("performance_filenames")
+#    figure10_data.pop("ood_filenames")
+#    figure10_data.pop("covariance_filenames")
+#    figure10_data.pop("ood_ssl_eval_filenames")
+#    figure10_data.pop("ssl_eval_filenames")
+#    figure10_data["ood_data"] = ood_data
+
+    if len(missing_runs) > 0:
+        logger.info("The following files were missing:")
+        for f in missing_runs:
+            logger.info(f)
+
+    filename = os.path.join(destdir, 'plot_data.json')
+    logger.info(f"Saving plot data to {filename}")
+    with open(filename, 'w') as fp:
+        json.dump(figure10_data, fp, allow_nan=False)
+        
+        
 
 """Main
 """
@@ -2202,6 +2664,11 @@ def aggregate_stats(fig_id):
         if not os.path.exists(destdir):
             os.makedirs(destdir)
         aggregate_fig9(destdir)
+    elif fig_id == 10:
+        destdir = os.path.join(plots_path, 'figure10')
+        if not os.path.exists(destdir):
+            os.makedirs(destdir)
+        aggregate_fig10(destdir)
     else:
         raise ValueError(f"Invalid figure id {fig_id}")
 
@@ -2236,7 +2703,7 @@ def main():
     global logger
     logger = logging.getLogger()
 
-    for fig_id in [8]:
+    for fig_id in [10]:
         aggregate_stats(fig_id)
 
 
