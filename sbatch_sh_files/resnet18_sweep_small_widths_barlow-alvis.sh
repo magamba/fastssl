@@ -2,7 +2,7 @@
 #SBATCH -A NAISS2023-5-476
 #SBATCH -p alvis
 #SBATCH --gpus-per-node=A40:1
-#SBATCH -t 3:00:00
+#SBATCH -t 5:00:00
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /cephyr/users/%u/Alvis/linear-regions/logs/%A_%a.out
