@@ -2417,10 +2417,10 @@ def aggregate_fig10(destdir=plots_path):
     nnoise = len(figure10_conf["noise_configs"])
     npdepths = len(figure10_conf["projection_depths"])
     nnsamples = len(figure10_conf["nsamples"])
-#    covariance_metrics = [
-#        "intra_manifold_eigen", "inter_manifold_eigen", "intra_manifold_gen_eigen", "inter_manifold_gen_eigen"
-#    ]
-#    ssl_eval_metrics = ["test_loss"]
+    covariance_metrics = [
+        "intra_manifold_eigen", "inter_manifold_eigen", "intra_manifold_gen_eigen", "inter_manifold_gen_eigen"
+    ]
+    ssl_eval_metrics = ["test_loss"]
     ignore_metrics = ["test_loss", "alpha", "feature_input_jacobian", "rankme"]
 
     figure10_data = figure10_conf
@@ -2452,7 +2452,7 @@ def aggregate_fig10(destdir=plots_path):
                                             ).tolist()
                                             metric_ids = []
                                             for m_id, metric in enumerate(figure10_conf["metrics"]):
-                                                if algorithm == "barlow_twins" and metric in ignore_metrics: continue
+                                                if metric in ignore_metrics: continue
                                                 if metric in covariance_metrics or metric in ssl_eval_metrics:
                                                     metric_ids.append((m_id, metric))
                                                     continue
