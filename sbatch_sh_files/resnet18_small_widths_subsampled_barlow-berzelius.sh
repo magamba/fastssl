@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-#SBATCH -A berzelius-2023-229
+#SBATCH -A berzelius-2024-123
 #SBATCH --gpus=1
-#SBATCH -t 6:00:00
-#SBATCH -C thin
+#SBATCH -t 8:00:00
+#SBATCH -C fat
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /proj/memorization/logs/%A_%a.out
@@ -38,15 +38,29 @@ else
     ckpt_str="-cifar10"
 fi
 
+if [ "$dsize" == "" ] || [ "$dsize" == "0" ]; then
+    dsize=0
+else
+    ckpt_str="$ckpt_str""-nsamples_""$dsize"
+    dsize_int=$(python -c "print(round(float($dsize * 50000)))")
+    if [ $dsize_int -lt $batch_size ]; then
+        batch_size=$dsize_int
+    fi
+    if [ $dsize_int -lt $jac_batch_size ]; then
+        jac_batch_size=$dsize_int
+    fi
+fi
+
 SEEDS=3
 WIDTHS=64
 num_workers=16
 
 width=$((1+SLURM_ARRAY_TASK_ID%WIDTHS))
 seed=$((SLURM_ARRAY_TASK_ID/WIDTHS))
-lambd=0.005
-#pdim=2048
-pdim=$(($width * 32))
+#lambd=0.005
+lambd=0.00024
+#pdim=$(($width * 32))
+pdim=$(($width * 64))
 
 wandb_group='smoothness'
 
@@ -55,16 +69,21 @@ model=resnet18proj_width${width}
 ## configure checkpointing dirs and dataset paths
 
 wandb_projname="$proj_str"'ssl-effective_rank+overfit-subsample2'
-checkpt_dir="${SAVE_DIR}"/"$NAME""_subsample2""$ckpt_str"
+checkpt_dir="${SAVE_DIR}"/"$NAME""_subsample_small""$ckpt_str"
 
 if [ ! -d "$checkpt_dir" ]
 then
     mkdir -p "$checkpt_dir"
 fi
 
-# dataset locations
-trainset="${DATA_DIR}"/$dataset"-subsampled_2"
-testset="${DATA_DIR}"/$dataset"-subsampled_2"
+# dataset location
+if [ "$dsize" != "0" ]; then
+    trainset="${DATA_DIR}"/$dataset"-subsampled_2-nsamples_"$dsize"/train.beton"
+    testset="${DATA_DIR}"/$dataset"-subsampled_2-nsamples_"$dsize"/train.beton"
+else
+    trainset="${DATA_DIR}"/$dataset"-subsampled_2/train.beton"
+    testset="${DATA_DIR}"/$dataset"-subsampled_2/test.beton"
+fi
 
 #                    --training.weight_decay=1e-5 \
 
@@ -74,8 +93,8 @@ python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.ya
                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                     --training.batch_size=$batch_size --training.model=$model \
                     --training.seed=$seed \
-                    --training.train_dataset=${trainset}/train.beton \
-                    --training.val_dataset=${testset}/test.beton \
+                    --training.train_dataset=${trainset} \
+                    --training.val_dataset=${testset} \
                     --training.num_workers=$num_workers \
                     --training.log_interval=10 \
                     --training.track_alpha=True \
