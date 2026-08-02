@@ -15,7 +15,7 @@ eval "$(/proj/memorization/users/x_matga/miniconda3/bin/conda shell.bash hook)"
 
 echo "Setting env on ${SLURMD_NODENAME}"
 nvidia-smi
-conda activate $CONDA_ENV
+#conda activate $CONDA_ENV
 user="$USER"
 if [ -z "$user" ]; then
     user="$SLURM_JOB_USER"
@@ -29,7 +29,7 @@ DEVICE="cuda"
 # set up wandb
 WANDB_API_KEY="a31e51e69e539eaffb5d3683c402e59375cd47e6"
 WANDB_CACHE_DIR="/scratch/local"
-WANDB_MODE="offline"
+#WANDB_MODE="offline"
 
 # Set this to zero, disabling random salts for hashes
 # if an arg is given, then use that instead
@@ -44,7 +44,7 @@ done
 echo "SETUP_ENV - PYTHONHASHSEED=$PYTHONHASHSEED"
 
 
-export SAVE_DIR DATA_DIR WORKERS DEVICE PYTHONHASHSEED OUTPUT WANDB_API_KEY WANDB_CACHE_DIR WANDB_MODE
+export SAVE_DIR DATA_DIR WORKERS DEVICE PYTHONHASHSEED OUTPUT WANDB_API_KEY WANDB_CACHE_DIR
 
 echo "SETUP_ENV - Current ENV is:"
 printenv
