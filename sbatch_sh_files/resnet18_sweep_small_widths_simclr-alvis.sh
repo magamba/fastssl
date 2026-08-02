@@ -1,13 +1,14 @@
 #! /bin/bash
 #SBATCH -A NAISS2023-5-476
 #SBATCH -p alvis
+#SBATCH --exclude alvis6-01
 #SBATCH --gpus-per-node=A40:1
-#SBATCH -t 4:00:00
+#SBATCH -t 2:00:00
 #SBATCH --mail-type END,FAIL
 #SBATCH --mail-user mgamba@kth.se
 #SBATCH --output /cephyr/users/%u/Alvis/linear-regions/logs/%A_%a.out
 #SBATCH --error /cephyr/users/%u/Alvis/linear-regions/logs/%A_%a.err
-#SBATCH --array 45-59%4
+#SBATCH --array 45-59%8
 ####SBATCH --array 87-115
 ####SBATCH --array 0-173%30
 
@@ -31,8 +32,8 @@ fi
 WANDB__SERVICE_WAIT=300
 
 #dataset='stl10'
-dataset='cifar10'
-#dataset='cifar100'
+#dataset='cifar10'
+dataset='cifar100'
 if [ $dataset = 'stl10' ]
 then
     batch_size=256
