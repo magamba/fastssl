@@ -1,0 +1,16 @@
+SAVE_DIR="/mimer/NOBACKUP/groups/linear-regions/smoothness/checkpoints"
+OUTPUT="/mimer/NOBACKUP/groups/linear-regions/smoothness/checkpoints"
+DATA_DIR="/mimer/NOBACKUP/groups/linear-regions/smoothness/data"
+DEVICE="cuda"
+
+# avoid getting stuck at PCA
+#MKL_THREADING_LAYER="TBB"
+
+# set up wandb
+WANDB_API_KEY="a31e51e69e539eaffb5d3683c402e59375cd47e6"
+WANDB_CACHE_DIR="$TMPDIR"
+#WANDB_MODE="offline"
+
+# Set this to zero, disabling random salts for hashes
+# if an arg is given, then use that instead
+PYTHONHASHSEED=0

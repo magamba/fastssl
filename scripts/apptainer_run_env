@@ -1,0 +1,14 @@
+SAVE_DIR="/proj/memorization/smoothness/checkpoints"
+OUTPUT="/proj/memorization/smoothness/checkpoints"
+DATA_DIR="/proj/memorization/data"
+DEVICE="cuda"
+# set up wandb
+WANDB_API_KEY="a31e51e69e539eaffb5d3683c402e59375cd47e6"
+WANDB_CACHE_DIR="/scratch/local"
+#WANDB_MODE="offline"
+# disable randomness in hashing
+PYTHONHASHSEED=0
+
+
+
+
